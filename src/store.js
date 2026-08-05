@@ -39,6 +39,11 @@ function normalizeSnippet(raw, origin) {
       data: a.data, // base64, no data-URL prefix
     };
   }
+  // Optional rich-text HTML variant of the replacement (bold/italic/lists/
+  // links/inline images). Kept as a string so it syncs in the team library.
+  if (typeof raw.html === 'string' && raw.html.trim()) {
+    out.html = raw.html;
+  }
   return out;
 }
 
