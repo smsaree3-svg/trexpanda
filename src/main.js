@@ -99,6 +99,8 @@ async function onKeyDown(e) {
     try {
       if (action.attachment) {
         await expandAttachment(action);
+      } else if (action.html) {
+        await inject.expandHtml(action, clipboard);
       } else {
         await inject.expand(action, clipboard);
       }
