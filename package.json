@@ -1,7 +1,7 @@
 {
   "name": "trexpanda",
   "productName": "Trexpanda",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "description": "Trexpanda — Type Less. Do More. Cross-platform text expander with team-shared snippet libraries. Type a short trigger, get a full snippet. Teams keep a shared library everyone syncs to.",
   "author": "Amit Roda",
   "license": "MIT",
@@ -38,7 +38,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "YOUR_GITHUB_USER",
+        "owner": "smsaree3-svg",
         "repo": "trexpanda"
       }
     ],
