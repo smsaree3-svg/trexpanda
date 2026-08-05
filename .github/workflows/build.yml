@@ -30,6 +30,11 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+
       - name: Install dependencies
         run: npm install
 
@@ -65,3 +70,6 @@ jobs:
             release/Trexpanda-Setup.exe
             release/Trexpanda.dmg
             release/Trexpanda.zip
+            release/latest.yml
+            release/latest-mac.yml
+            release/*.blockmap
