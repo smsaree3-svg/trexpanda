@@ -44,7 +44,8 @@ class Expander {
     let max = 1;
     for (const s of snippets) {
       if (!s || !s.trigger || s.enabled === false) continue;
-      this.map.set(s.trigger, s.replacement || '');
+      // Store the whole snippet so expansion can access text AND any attachment.
+      this.map.set(s.trigger, s);
       if (s.trigger.length > max) max = s.trigger.length;
     }
     // Longest trigger determines how much recent typing we need to remember.
@@ -75,13 +76,16 @@ class Expander {
     }
     if (!best) return null;
 
-    const rendered = this.render(this.map.get(best));
+    const snippet = this.map.get(best);
+    const rendered = this.render(snippet.replacement || '');
     this.buffer = ''; // consumed
     return {
       trigger: best,
       replacement: rendered.text,
       backspaces: best.length, // how many chars of the trigger to delete
       caretBack: rendered.caretBack, // how far to move the caret left after insert
+      // Optional {type:'image'|'file', name, mime, data(base64)} — pasted on expansion.
+      attachment: snippet.attachment || null,
     };
   }
 
