@@ -60,9 +60,10 @@ function renderSnippets() {
   list.forEach((s, i) => {
     const tr = document.createElement('tr');
     const att = s.attachment ? ' <span title="' + esc(s.attachment.name) + '">📎 ' + esc(s.attachment.name) + '</span>' : '';
+    const rich = s.html ? ' <span class="pill ok" title="Formatted (rich text)" style="padding:1px 7px">styled</span>' : '';
     tr.innerHTML =
       '<td><code>' + esc(s.trigger) + '</code></td>' +
-      '<td class="repl">' + esc(oneLine(s.replacement)) + att + '</td>' +
+      '<td class="repl">' + esc(oneLine(s.replacement)) + rich + att + '</td>' +
       '<td class="row-actions" style="text-align:right">' +
       '<button data-edit="' + i + '">Edit</button>' +
       '<button class="danger" data-del="' + i + '">Delete</button></td>';
@@ -111,7 +112,9 @@ function openEditor(index) {
   const s = index >= 0 ? state.personal[index] : { trigger: '', replacement: '', enabled: true };
   $('modal-title').textContent = index >= 0 ? 'Edit snippet' : 'New snippet';
   $('edit-trigger').value = s.trigger || '';
-  $('edit-repl').value = s.replacement || '';
+  // The "Expands to" field is now a rich-text editor. Load stored HTML if the
+  // snippet has it, otherwise show the plain text (newlines preserved).
+  $('edit-repl').innerHTML = s.html ? s.html : textToHtml(s.replacement || '');
   $('edit-enabled').checked = s.enabled !== false;
   editAttachment = s.attachment || null;
   renderAttachment();
@@ -163,13 +166,19 @@ function onAttachFile(file) {
 async function saveSnippet() {
   const trigger = $('edit-trigger').value.trim();
   if (!trigger) { $('edit-trigger').focus(); return; }
+  const editor = $('edit-repl');
+  const html = sanitizeHtml(editor.innerHTML);
+  const text = editor.innerText; // plain-text fallback (preserves line breaks)
   const snippet = {
     trigger,
-    replacement: $('edit-repl').value,
+    replacement: text,
     label: trigger,
     enabled: $('edit-enabled').checked,
     origin: 'personal',
   };
+  // Only keep the HTML variant when it actually carries formatting; a plain
+  // paragraph of text expands fine (and syncs smaller) without it.
+  if (isFormatted(html)) snippet.html = html;
   if (editAttachment) snippet.attachment = editAttachment;
   const list = (state.personal || []).slice();
   if (editIndex >= 0) list[editIndex] = snippet; else list.push(snippet);
@@ -343,6 +352,46 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function oneLine(s) { return String(s || '').replace(/\s+/g, ' ').slice(0, 90); }
 
+// ---- rich-text editor helpers ---------------------------------------------
+// Stored plain text -> safe HTML for the editor (newlines become <br>).
+function textToHtml(text) { return esc(text).replace(/\n/g, '<br>'); }
+
+// True when the HTML carries real formatting (not just a plain line of text),
+// so we only store the heavier HTML variant when it's actually needed.
+function isFormatted(html) {
+  const stripped = String(html).replace(/<br\s*\/?>(?=)/gi, '').replace(/<div>|<\/div>/gi, '').trim();
+  return /<(b|strong|i|em|u|s|ul|ol|li|a|img|h[1-6]|blockquote|code|pre|span)\b|style=/i.test(stripped);
+}
+
+// Strip anything unsafe before we store or inject the HTML: script/style/etc.,
+// inline event handlers, and javascript: URLs.
+function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(String(html), 'text/html');
+  doc.querySelectorAll('script,style,meta,link,iframe,object,embed').forEach((n) => n.remove());
+  doc.querySelectorAll('*').forEach((el) => {
+    [...el.attributes].forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      if (name.startsWith('on')) el.removeAttribute(attr.name);
+      else if ((name === 'href' || name === 'src') && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
+    });
+  });
+  return doc.body.innerHTML;
+}
+
+// Save/restore the editor selection so toolbar actions (esp. the link input,
+// which steals focus) apply to the text the user had selected.
+let rtSavedRange = null;
+function rtSaveSelection() {
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount) rtSavedRange = sel.getRangeAt(0).cloneRange();
+}
+function rtRestoreSelection() {
+  if (!rtSavedRange) return;
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(rtSavedRange);
+}
+
 async function refresh() { state = await window.api.getState(); render(); }
 
 // ---- wire up --------------------------------------------------------------
@@ -367,6 +416,43 @@ $('import-input').addEventListener('change', (e) => {
 $('btn-attach').addEventListener('click', () => $('attach-input').click());
 $('attach-input').addEventListener('change', (e) => { onAttachFile(e.target.files[0]); e.target.value = ''; });
 $('btn-attach-remove').addEventListener('click', () => { editAttachment = null; renderAttachment(); });
+
+// ---- rich-text toolbar ----------------------------------------------------
+// Keep the editor's text selection when a toolbar button is pressed.
+$('rt-toolbar').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+$('rt-toolbar').addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  if (btn.id === 'rt-image') { rtSaveSelection(); $('rt-image-input').click(); return; }
+  const cmd = btn.dataset.cmd;
+  if (!cmd) return;
+  if (cmd === 'createLink') {
+    rtSaveSelection();
+    const row = $('rt-link-row');
+    row.style.display = 'flex';
+    $('rt-link-url').value = '';
+    $('rt-link-url').focus();
+    return;
+  }
+  $('edit-repl').focus();
+  document.execCommand(cmd, false, null);
+});
+$('rt-image-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = () => { $('edit-repl').focus(); rtRestoreSelection(); document.execCommand('insertImage', false, String(reader.result)); };
+  reader.readAsDataURL(file);
+});
+$('rt-link-apply').addEventListener('click', () => {
+  const url = $('rt-link-url').value.trim();
+  $('rt-link-row').style.display = 'none';
+  $('edit-repl').focus();
+  rtRestoreSelection();
+  if (url) document.execCommand('createLink', false, url);
+});
+$('rt-link-cancel').addEventListener('click', () => { $('rt-link-row').style.display = 'none'; $('edit-repl').focus(); });
 $('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeEditor(); });
 
 window.api.onState((s) => { state = s; render(); });
