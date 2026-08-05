@@ -82,6 +82,10 @@ class Expander {
     return {
       trigger: best,
       replacement: rendered.text,
+      // Optional rich HTML variant, with {tokens} resolved. When present the
+      // caller writes both text and HTML to the clipboard so formatting
+      // (bold, lists, links, images) survives a paste into rich apps.
+      html: snippet.html ? this.renderHtml(snippet.html) : null,
       backspaces: best.length, // how many chars of the trigger to delete
       caretBack: rendered.caretBack, // how far to move the caret left after insert
       // Optional {type:'image'|'file', name, mime, data(base64)} — pasted on expansion.
@@ -119,6 +123,23 @@ class Expander {
       text = text.slice(0, marker) + text.slice(marker + 2);
     }
     return { text, caretBack };
+  }
+
+  /**
+   * Resolve {tokens} inside an HTML replacement and strip the "$|" caret
+   * marker (caret placement isn't supported for rich paste). Returns HTML.
+   */
+  renderHtml(html) {
+    let out = String(html);
+    out = out.replace(/\{(\w+)\}/g, (whole, name) => {
+      if (this.opts.dynamicResolver) {
+        const custom = this.opts.dynamicResolver(name);
+        if (custom != null) return custom;
+      }
+      if (DYNAMIC[name]) return DYNAMIC[name]();
+      return whole;
+    });
+    return out.split('$|').join('');
   }
 }
 
