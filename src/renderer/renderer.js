@@ -59,9 +59,10 @@ function renderSnippets() {
   $('count').textContent = list.length + ' snippet' + (list.length === 1 ? '' : 's');
   list.forEach((s, i) => {
     const tr = document.createElement('tr');
+    const att = s.attachment ? ' <span title="' + esc(s.attachment.name) + '">📎 ' + esc(s.attachment.name) + '</span>' : '';
     tr.innerHTML =
       '<td><code>' + esc(s.trigger) + '</code></td>' +
-      '<td class="repl">' + esc(oneLine(s.replacement)) + '</td>' +
+      '<td class="repl">' + esc(oneLine(s.replacement)) + att + '</td>' +
       '<td class="row-actions" style="text-align:right">' +
       '<button data-edit="' + i + '">Edit</button>' +
       '<button class="danger" data-del="' + i + '">Delete</button></td>';
@@ -103,6 +104,8 @@ function renderSettings() {
 }
 
 // ---- snippet editor -------------------------------------------------------
+let editAttachment = null; // {type, name, mime, data} while editing
+
 function openEditor(index) {
   editIndex = index;
   const s = index >= 0 ? state.personal[index] : { trigger: '', replacement: '', enabled: true };
@@ -110,10 +113,52 @@ function openEditor(index) {
   $('edit-trigger').value = s.trigger || '';
   $('edit-repl').value = s.replacement || '';
   $('edit-enabled').checked = s.enabled !== false;
+  editAttachment = s.attachment || null;
+  renderAttachment();
   $('modal').classList.add('show');
   $('edit-trigger').focus();
 }
 function closeEditor() { $('modal').classList.remove('show'); }
+
+function renderAttachment() {
+  const preview = $('attach-preview');
+  const thumb = $('attach-thumb');
+  const name = $('attach-name');
+  const btn = $('btn-attach');
+  if (editAttachment) {
+    preview.style.display = 'inline-flex';
+    btn.textContent = '📎 Replace…';
+    name.textContent = editAttachment.name + (editAttachment.type === 'image' ? ' (image)' : ' (file)');
+    if (editAttachment.type === 'image') {
+      thumb.style.display = 'inline-block';
+      thumb.src = 'data:' + (editAttachment.mime || 'image/png') + ';base64,' + editAttachment.data;
+    } else {
+      thumb.style.display = 'none';
+    }
+  } else {
+    preview.style.display = 'none';
+    thumb.style.c�splay = 'none';
+    btn.textContent = '📎 Attach image or file…';
+  }
+}
+
+function onAttachFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = String(reader.result);
+    const comma = dataUrl.indexOf(',');
+    const data = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+    editAttachment = {
+      type: (file.type || '').startsWith('image/') ? 'image' : 'file',
+      name: file.name || 'attachment',
+      mime: file.type || '',
+      data,
+    };
+    renderAttachment();
+  };
+  reader.readAsDataURL(file);
+}
 
 async function saveSnippet() {
   const trigger = $('edit-trigger').value.trim();
@@ -125,6 +170,7 @@ async function saveSnippet() {
     enabled: $('edit-enabled').checked,
     origin: 'personal',
   };
+  if (editAttachment) snippet.attachment = editAttachment;
   const list = (state.personal || []).slice();
   if (editIndex >= 0) list[editIndex] = snippet; else list.push(snippet);
   await window.api.savePersonal(list);
@@ -188,6 +234,9 @@ $('btn-save-settings').addEventListener('click', saveSettings);
 $('btn-sync').addEventListener('click', syncNow);
 $('btn-choose-folder').addEventListener('click', choosePublishFolder);
 $('btn-publish').addEventListener('click', publish);
+$('btn-attach').addEventListener('click', () => $('attach-input').click());
+$('attach-input').addEventListener('change', (e) => { onAttachFile(e.target.files[0]); e.target.value = ''; });
+$('btn-attach-remove').addEventListener('click', () => { editAttachment = null; renderAttachment(); });
 $('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeEditor(); });
 
 window.api.onState((s) => { state = s; render(); });
