@@ -59,6 +59,16 @@
     width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text);
     padding: 9px 11px; border-radius: 8px; font: inherit; }
   textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, Menlo, monospace; }
+  .rt-toolbar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .rt-toolbar button { padding: 4px 10px; font-size: 12px; }
+  .rt-editor { min-height: 120px; max-height: 260px; overflow: auto; background: var(--bg);
+    border: 1px solid var(--line); color: var(--text); padding: 9px 11px; border-radius: 8px;
+    font: inherit; line-height: 1.5; }
+  .rt-editor:focus { outline: none; border-color: var(--accent); }
+  .rt-editor:empty:before { content: attr(data-placeholder); color: var(--muted); }
+  .rt-editor img { max-width: 100%; border-radius: 6px; }
+  .rt-editor a { color: var(--accent); }
+  .rt-editor ul, .rt-editor ol { margin: 6px 0; padding-left: 22px; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 5px; }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -189,8 +199,24 @@
     <input type="text" id="edit-trigger" placeholder=";addr" />
     <p class="hint">The text you type to fire the expansion. Prefix with a symbol like <span class="kbd">;</span> or <span class="kbd">/</span> to avoid firing on normal words.</p>
     <label>Expands to</label>
-    <textarea id="edit-repl" placeholder="123 Market Street&#10;Bengaluru 560001"></textarea>
-    <p class="hint">Tokens: <span class="kbd">{date}</span> <span class="kbd">{time}</span> <span class="kbd">{datetime}</span>. Use <span class="kbd">$|</span> to place the cursor after expansion.</p>
+    <div class="rt-toolbar" id="rt-toolbar">
+      <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
+      <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
+      <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
+      <button type="button" data-cmd="insertUnorderedList" title="Bulleted list">Bullets</button>
+      <button type="button" data-cmd="insertOrderedList" title="Numbered list">Numbered</button>
+      <button type="button" data-cmd="createLink" title="Add link">Link</button>
+      <button type="button" id="rt-image" title="Insert image">Image</button>
+      <button type="button" data-cmd="removeFormat" title="Clear formatting">Clear</button>
+    </div>
+    <div id="edit-repl" class="rt-editor" contenteditable="true" data-placeholder="123 Market Street, Bengaluru 560001"></div>
+    <input type="file" id="rt-image-input" accept="image/*" style="display:none" />
+    <div id="rt-link-row" style="display:none;gap:6px;margin-top:6px;align-items:center">
+      <input type="text" id="rt-link-url" placeholder="https://example.com" style="flex:1" />
+      <button type="button" id="rt-link-apply">Add link</button>
+      <button type="button" class="ghost" id="rt-link-cancel">Cancel</button>
+    </div>
+    <p class="hint">Formatting (bold, italic, lists, links, images) is kept when the macro pastes into rich apps like email &amp; docs. Tokens: <span class="kbd">{date}</span> <span class="kbd">{time}</span> <span class="kbd">{datetime}</span>.</p>
     <label>Attachment (optional)</label>
     <div id="attach-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <button type="button" class="ghost" id="btn-attach">📎 Attach image or file…</button>
