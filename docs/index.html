@@ -317,7 +317,7 @@
     var win  = document.getElementById('dlWin');
     var mac  = document.getElementById('dlMac');
     var note = document.getElementById('dlNote');
-    var configured = GITHUB.owner && GITHUB.owner !== 'smsaree3-svg';
+    var configured = !!GITHUB.owner;
     var base = 'https://github.com/' + GITHUB.owner + '/' + GITHUB.repo;
 
     if (configured){
