@@ -109,6 +109,10 @@
   <section id="view-snippets" class="view active">
     <div class="toolbar">
       <button class="primary" id="btn-add">+ New snippet</button>
+      <button id="btn-import">Import CSV</button>
+      <button id="btn-export">Export CSV</button>
+      <input type="file" id="import-input" accept=".csv,text/csv" style="display:none" />
+      <span id="import-status" class="pill" style="display:none"></span>
       <span class="spacer"></span>
       <span id="count" class="pill"></span>
     </div>
