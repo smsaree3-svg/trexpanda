@@ -88,4 +88,28 @@ async function expand(action, clipboard) {
   }
 }
 
-module.exports = { available, getLoadError, expand, pressBackspaces, paste };
+/**
+ * Perform a rich-text expansion: put BOTH plain text and HTML on the clipboard
+ * so the target app pastes formatting (bold, lists, links, images) when it can,
+ * and falls back to the plain text when it can't.
+ * @param {object} action result from Expander.onChar() (has .html and .replacement)
+ * @param {object} clipboard Electron clipboard module
+ */
+async function expandHtml(action, clipboard) {
+  if (!nut) return;
+  const previous = clipboard.readText();
+  try {
+    await pressBackspaces(action.backspaces);
+    clipboard.write({ text: action.replacement || '', html: action.html });
+    await new Promise((r) => setTimeout(r, 25));
+    await paste();
+  } finally {
+    setTimeout(() => {
+      try {
+        clipboard.writeText(previous);
+      } catch (_) {}
+    }, 140);
+  }
+}
+
+module.exports = { available, getLoadError, expand, expandHtml, pressBackspaces, paste };
