@@ -187,6 +187,18 @@
     <label>Expands to</label>
     <textarea id="edit-repl" placeholder="123 Market Street&#10;Bengaluru 560001"></textarea>
     <p class="hint">Tokens: <span class="kbd">{date}</span> <span class="kbd">{time}</span> <span class="kbd">{datetime}</span>. Use <span class="kbd">$|</span> to place the cursor after expansion.</p>
+    <label>Attachment (optional)</label>
+    <div id="attach-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button type="button" class="ghost" id="btn-attach">📎 Attach image or file…</button>
+      <input type="file" id="attach-input" style="display:none" />
+      <span id="attach-preview" style="display:none;align-items:center;gap:8px">
+        <img id="attach-thumb" style="display:none;height:34px;width:34px;object-fit:cover;border-radius:6px;border:1px solid var(--line)" />
+        <span id="attach-name" style="color:var(--text);font-size:13px"></span>
+        <button type="button" class="ghost danger" id="btn-attach-remove" style="padding:4px 8px">Remove</button>
+      </span>
+    </div>
+    <p class="hint">An <b>image</b> pastes inline when the trigger fires. A <b>file</b> is copied to your clipboard so you can paste it as an attachment (or its path). Kept small snippets sync best — large files bloat the team library.</p>
+
     <div class="switch"><input type="checkbox" id="edit-enabled" checked /> <label style="margin:0">Enabled</label></div>
     <div class="modal-actions">
       <button class="ghost" id="btn-cancel">Cancel</button>
