@@ -137,7 +137,7 @@ function renderAttachment() {
     }
   } else {
     preview.style.display = 'none';
-    thumb.style.c�splay = 'none';
+    thumb.style.display = 'none';
     btn.textContent = '📎 Attach image or file…';
   }
 }
@@ -219,6 +219,125 @@ async function publish() {
   else { st.textContent = 'error: ' + res.error; st.className = 'pill bad'; }
 }
 
+// ---- CSV import / export --------------------------------------------------
+// Parse RFC-4180-style CSV: quoted fields, commas & newlines inside quotes,
+// and "" as an escaped quote. Returns an array of string arrays (rows).
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  // Normalise line endings so \r\n and \r behave like \n.
+  const s = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (s[i + 1] === '"') { field += '"'; i++; } // escaped quote
+        else inQuotes = false;
+      } else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      row.push(field); field = '';
+    } else if (c === '\n') {
+      row.push(field); field = '';
+      rows.push(row); row = [];
+    } else {
+      field += c;
+    }
+  }
+  // Flush trailing field/row (unless the input ended on a clean newline).
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.length && r.some((v) => v.trim() !== ''));
+}
+
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function setImportStatus(text, kind) {
+  const el = $('import-status');
+  el.style.display = 'inline-block';
+  el.textContent = text;
+  el.className = 'pill ' + (kind || '');
+}
+
+// Column headers we understand (case-insensitive). Anything else falls back to
+// positional order: column 1 = trigger, column 2 = replacement, column 3 = label.
+function importCSV(text) {
+  const rows = parseCSV(text);
+  if (!rows.length) { setImportStatus('empty file - nothing to import', 'bad'); return; }
+
+  const norm = (h) => String(h || '').trim().toLowerCase();
+  const header = rows[0].map(norm);
+  const known = ['trigger', 'shortcut', 'abbreviation', 'replacement', 'expansion', 'expands to', 'text', 'value', 'label', 'name', 'description'];
+  const hasHeader = header.some((h) => known.includes(h));
+
+  let iTrig = 0, iRepl = 1, iLabel = 2;
+  if (hasHeader) {
+    const find = (names) => header.findIndex((h) => names.includes(h));
+    iTrig = find(['trigger', 'shortcut', 'abbreviation']);
+    iRepl = find(['replacement', 'expansion', 'expands to', 'text', 'value']);
+    iLabel = find(['label', 'name', 'description']);
+  }
+  if (iTrig < 0) iTrig = 0;
+  if (iRepl < 0) iRepl = 1;
+
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const list = (state.personal || []).slice();
+  const indexByTrigger = new Map();
+  list.forEach((s, i) => indexByTrigger.set(s.trigger, i));
+
+  let added = 0, updated = 0, skipped = 0;
+  for (const r of dataRows) {
+    const trigger = (r[iTrig] || '').trim();
+    const replacement = iRepl >= 0 ? (r[iRepl] || '') : '';
+    const label = (iLabel >= 0 && r[iLabel] != null && r[iLabel].trim()) ? r[iLabel].trim() : trigger;
+    if (!trigger) { skipped++; continue; }
+    const snippet = { trigger, replacement, label, enabled: true, origin: 'personal' };
+    if (indexByTrigger.has(trigger)) {
+      const existing = list[indexByTrigger.get(trigger)];
+      if (existing.attachment) snippet.attachment = existing.attachment; // keep any attachment
+      list[indexByTrigger.get(trigger)] = snippet;
+      updated++;
+    } else {
+      indexByTrigger.set(trigger, list.length);
+      list.push(snippet);
+      added++;
+    }
+  }
+
+  if (!added && !updated) { setImportStatus('no valid rows found (need a trigger column)', 'bad'); return; }
+
+  window.api.savePersonal(list).then(() => {
+    const parts = [];
+    if (added) parts.push(added + ' added');
+    if (updated) parts.push(updated + ' updated');
+    if (skipped) parts.push(skipped + ' skipped');
+    setImportStatus('imported: ' + parts.join(', '), 'ok');
+    refresh();
+  });
+}
+
+function exportCSV() {
+  const list = state.personal || [];
+  const lines = ['trigger,replacement,label'];
+  list.forEach((s) => {
+    lines.push([csvCell(s.trigger), csvCell(s.replacement), csvCell(s.label || s.trigger)].join(','));
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'trexpanda-macros.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // ---- helpers --------------------------------------------------------------
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -234,6 +353,17 @@ $('btn-save-settings').addEventListener('click', saveSettings);
 $('btn-sync').addEventListener('click', syncNow);
 $('btn-choose-folder').addEventListener('click', choosePublishFolder);
 $('btn-publish').addEventListener('click', publish);
+$('btn-import').addEventListener('click', () => $('import-input').click());
+$('btn-export').addEventListener('click', exportCSV);
+$('import-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => importCSV(String(reader.result));
+  reader.onerror = () => setImportStatus('could not read file', 'bad');
+  reader.readAsText(file);
+});
 $('btn-attach').addEventListener('click', () => $('attach-input').click());
 $('attach-input').addEventListener('change', (e) => { onAttachFile(e.target.files[0]); e.target.value = ''; });
 $('btn-attach-remove').addEventListener('click', () => { editAttachment = null; renderAttachment(); });
