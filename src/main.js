@@ -2,6 +2,9 @@
 
 const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, nativeImage, shell, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const { exec } = require('child_process');
 
 const { Expander } = require('./expander');
 const { Store } = require('./store');
@@ -94,7 +97,11 @@ async function onKeyDown(e) {
   // Expansion matched — inject the replacement.
   if (inject.available()) {
     try {
-      await inject.expand(action, clipboard);
+      if (action.attachment) {
+        await expandAttachment(action);
+      } else {
+        await inject.expand(action, clipboard);
+      }
       stats.expansionsThisSession++;
       pushState();
     } catch (err) {
@@ -102,6 +109,81 @@ async function onKeyDown(e) {
     }
   }
 }
+
+/**
+ * Expand a snippet that carries an image or file attachment.
+ *  - image: place the image on the clipboard and paste it inline.
+ *  - file:  write it to a temp file and copy that file onto the OS clipboard so
+ *           it can be pasted as an attachment (email, chat, file dialogs).
+ * Any accompanying replacement text is pasted first.
+ */
+async function expandAttachment(action) {
+  const att = action.attachment;
+  const previousText = clipboard.readText();
+
+  // Delete the typed trigger first.
+  await inject.pressBackspaces(action.backspaces);
+
+  // If the snippet also has text, paste that first.
+  if (action.replacement) {
+    clipboard.writeText(action.replacement);
+    await delay(20);
+    await inject.paste();
+    await delay(60);
+  }
+
+  const buffer = Buffer.from(att.data, 'base64');
+
+  if (att.type === 'image') {
+    const img = nativeImage.createFromBuffer(buffer);
+    if (!img.isEmpty()) {
+      clipboard.writeImage(img);
+      await delay(30);
+      await inject.paste();
+    }
+  } else {
+    // Write to a stable temp path and copy the FILE to the clipboard.
+    const dir = path.join(os.tmpdir(), 'trexpanda');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+    const filePath = path.join(dir, att.name || 'attachment');
+    fs.writeFileSync(filePath, buffer);
+    const copied = await copyFileToClipboard(filePath);
+    if (copied) {
+      await delay(60);
+      await inject.paste();
+    } else {
+      // Fallback: paste the file path as text so the user still gets something.
+      clipboard.writeText(filePath);
+      await delay(20);
+      await inject.paste();
+    }
+  }
+
+  // Restore the user's previous text clipboard shortly after.
+  setTimeout(() => { try { clipboard.writeText(previousText); } catch (_) {} }, 250);
+}
+
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Put an actual file on the OS clipboard (so paste attaches the file). */
+function copyFileToClipboard(filePath) {
+  return new Promise((resolve) => {
+    let cmd;
+    if (process.platform === 'darwin') {
+      const escaped = filePath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      cmd = `osascript -e 'set the clipboard to POSIX file "${escaped}"'`;
+    } else if (process.platform === 'win32') {
+      const escaped = filePath.replace(/'/g, "''");
+      cmd = `powershell -NoProfile -Command "Set-Clipboard -Path '${escaped}'"`;
+    } else {
+      return resolve(false); // Linux file-clipboard varies; fall back to path text.
+    }
+    exec(cmd, (err) => resolve(!err));
+  });
+}
+
 
 // ---------------------------------------------------------------------------
 // Team sync
