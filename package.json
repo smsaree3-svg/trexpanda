@@ -8,7 +8,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test/expander.test.js && node test/sync.test.js",
+    "test": "node test/expander.test.js && node test/sync.test.js && node test/cloud.test.js",
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
@@ -22,7 +22,8 @@
     "uiohook-napi": "^1.5.4",
     "@nut-tree-fork/nut-js": "^4.2.0",
     "electron-updater": "^6.2.1",
-    "electron-store": "^8.2.0"
+    "electron-store": "^8.2.0",
+    "@supabase/supabase-js": "^2.45.0"
   },
   "build": {
     "appId": "com.trexpanda.app",

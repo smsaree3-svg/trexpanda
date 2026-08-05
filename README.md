@@ -148,6 +148,30 @@ A bare `[ ... ]` array of snippets is also accepted. A sample lives in
 
 ---
 
+## Accounts, friends & sharing (optional)
+
+Beyond the file-based team library, Trexpanda can connect people directly: sign
+in, add friends/coworkers by username, and **share your snippet library** with
+specific people. When you share, they receive your snippets — and your future
+updates — in their own app; when they share with you, you can pull their
+snippets into your expander with one click.
+
+This runs on [Supabase](https://supabase.com) (hosted Postgres + auth) — no
+server of your own to run, free tier is plenty. It's entirely optional: without
+a Supabase project configured, the app works exactly as before and the
+**Friends & Sharing** tab shows a short "not set up" notice.
+
+Setup takes ~5 minutes — see **[CLOUD_SETUP.md](CLOUD_SETUP.md)**. In short:
+create a Supabase project, run [`supabase/schema.sql`](supabase/schema.sql), and
+drop your project URL + anon key into `src/cloud/cloud-config.json` (or the
+`SUPABASE_URL` / `SUPABASE_ANON_KEY` env vars).
+
+Your snippets stay private until you explicitly turn on **Share** for a friend.
+All cloud code lives in `src/cloud/` and runs in the main process; the renderer
+reaches it only through the existing preload bridge.
+
+---
+
 ## Auto-updates (optional)
 
 The app is wired for [electron-updater](https://www.electron.build/auto-update).
@@ -168,15 +192,21 @@ Until configured, the updater is a no-op and does no harm.
 ```
 src/
   expander.js   Pure expansion engine (trigger matching, tokens, caret) — unit-tested
-  store.js      Personal + team snippet storage and merge logic — unit-tested
+  store.js      Personal + team + cloud snippet storage and merge logic — unit-tested
   sync.js       Team-library fetch (URL or folder) and publish — unit-tested
   keymap.js     uiohook keycode -> character (US layout)
   inject.js     Keystroke output: backspaces + clipboard paste (nut-js)
   main.js       Electron main process: tray, global hook, wiring, IPC, sync scheduler
   preload.js    Secure bridge to the renderer
+  cloud/        Optional Supabase layer: accounts, friends, library sharing
+    config.js     Resolves the Supabase URL + anon key (env or cloud-config.json)
+    client.js     Lazy Supabase client with an electron-store session adapter
+    helpers.js    Pure friend/snippet helpers — unit-tested
+    index.js      CloudService: auth, friends, libraries, shares (main process)
   renderer/     Snippet manager UI (index.html + renderer.js)
 test/           Node unit tests (npm test)
 team-library/   Sample shared library
+supabase/       schema.sql — tables + Row Level Security for the cloud features
 ```
 
 Native modules: `uiohook-napi` (global key capture) and

@@ -14,6 +14,7 @@ document.querySelectorAll('.tab').forEach((tab) => {
     document.querySelectorAll('.view').forEach((v) => v.classList.remove('active'));
     tab.classList.add('active');
     $('view-' + tab.dataset.view).classList.add('active');
+    if (tab.dataset.view === 'friends') refreshCloud();
   });
 });
 
@@ -369,5 +370,254 @@ $('attach-input').addEventListener('change', (e) => { onAttachFile(e.target.file
 $('btn-attach-remove').addEventListener('click', () => { editAttachment = null; renderAttachment(); });
 $('modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeEditor(); });
 
+// ===========================================================================
+// Cloud: accounts, friends & library sharing
+// ===========================================================================
+
+let cloud = {
+  status: { configured: false, signedIn: false, user: null },
+  myLibId: null,
+  sharedWith: new Set(), // friend userIds my library is shared with
+  friends: { friends: [], incoming: [], outgoing: [] },
+  shared: [], // libraries shared WITH me
+  subs: new Set(), // library ids I've turned on
+};
+
+function cc(method, ...args) {
+  return window.api.cloud.call(method, ...args).then((r) => r || { ok: false, error: 'no response' });
+}
+function initial(s) { return (String(s || '?').trim()[0] || '?').toUpperCase(); }
+
+async function refreshCloud() {
+  const st = await cc('status');
+  cloud.status = st.ok ? st.data : { configured: false, signedIn: false, reason: st.error };
+  renderCloud();
+  if (!cloud.status.configured || !cloud.status.signedIn) return;
+
+  const [lib, fr, sh, subs] = await Promise.all([
+    cc('ensureDefaultLibrary'), cc('listFriends'), cc('sharedWithMe'), cc('getSubscriptions'),
+  ]);
+  cloud.myLibId = lib.ok ? lib.data.id : null;
+  cloud.friends = fr.ok ? fr.data : { friends: [], incoming: [], outgoing: [] };
+  cloud.shared = sh.ok ? sh.data : [];
+  cloud.subs = new Set(subs.ok ? subs.data : []);
+  cloud.sharedWith = new Set();
+  if (cloud.myLibId) {
+    const shares = await cc('listShares', cloud.myLibId);
+    if (shares.ok) cloud.sharedWith = new Set(shares.data.map((x) => x.userId));
+  }
+  renderCloud();
+}
+
+function renderCloud() {
+  const s = cloud.status || {};
+  const pill = $('pill-account');
+  if (s.signedIn && s.user) { pill.textContent = '@' + (s.user.username || 'you'); pill.className = 'pill ok'; }
+  else { pill.textContent = 'signed out'; pill.className = 'pill'; }
+
+  const un = $('cloud-unavailable');
+  const auth = $('auth-panel');
+  const acct = $('account-panel');
+  if (!s.configured) {
+    un.style.display = 'block';
+    un.textContent = "⚠️ Cloud sharing isn't set up in this build. " + (s.reason || '') + ' See CLOUD_SETUP.md to connect a Supabase project.';
+    auth.style.display = 'none'; acct.style.display = 'none';
+    return;
+  }
+  un.style.display = 'none';
+  if (s.signedIn) { auth.style.display = 'none'; acct.style.display = 'block'; renderAccount(); }
+  else { auth.style.display = 'block'; acct.style.display = 'none'; }
+}
+
+function renderAccount() {
+  const u = cloud.status.user || {};
+  $('me-name').textContent = u.displayName || u.username || 'You';
+  $('me-username').textContent = '@' + (u.username || '');
+  $('me-avatar').textContent = initial(u.displayName || u.username);
+  $('set-autopublish').checked = !!(state.settings && state.settings.publishToCloud);
+
+  const inc = cloud.friends.incoming || [];
+  $('incoming-wrap').style.display = inc.length ? 'block' : 'none';
+  $('incoming-list').innerHTML = inc.map((x) => friendRow(x, 'incoming')).join('');
+
+  const out = cloud.friends.outgoing || [];
+  $('outgoing-wrap').style.display = out.length ? 'block' : 'none';
+  $('outgoing-list').innerHTML = out.map((x) => friendRow(x, 'outgoing')).join('');
+
+  const fr = cloud.friends.friends || [];
+  $('friends-empty').style.display = fr.length ? 'none' : 'block';
+  $('friends-list').innerHTML = fr.map((x) => friendRow(x, 'friend')).join('');
+
+  const sh = cloud.shared || [];
+  $('shared-empty').style.display = sh.length ? 'none' : 'block';
+  $('shared-list').innerHTML = sh.map(sharedRow).join('');
+
+  wireCloudRows();
+}
+
+function friendRow(x, kind) {
+  const p = x.profile || {};
+  const name = esc(p.display_name || p.username || 'Unknown user');
+  const uname = esc('@' + (p.username || 'user'));
+  let actions = '';
+  if (kind === 'incoming') {
+    actions = `<button class="primary" data-accept="${x.friendshipId}">Accept</button>` +
+      `<button class="danger" data-decline="${x.friendshipId}">Decline</button>`;
+  } else if (kind === 'outgoing') {
+    actions = `<span class="chip">pending</span>` +
+      `<button class="danger" data-cancel="${x.friendshipId}">Cancel</button>`;
+  } else {
+    const on = cloud.sharedWith.has(x.userId);
+    actions = `<span class="chip ${on ? 'on' : ''}">${on ? 'shared' : 'not shared'}</span>` +
+      `<button data-share="${x.userId}" data-on="${on ? 1 : 0}">${on ? 'Unshare' : 'Share'}</button>` +
+      `<button class="danger" data-unfriend="${x.friendshipId}">Remove</button>`;
+  }
+  return `<div class="list-row"><div class="avatar">${initial(p.display_name || p.username)}</div>` +
+    `<div class="who"><strong>${name}</strong><span class="uname">${uname}</span></div>` +
+    `<div class="grow"></div><div class="actions">${actions}</div></div>`;
+}
+
+function sharedRow(l) {
+  const owner = l.owner || {};
+  const on = cloud.subs.has(l.id);
+  return `<div class="list-row"><div class="avatar">${initial(owner.display_name || owner.username)}</div>` +
+    `<div class="who"><strong>${esc(l.name || 'Library')}</strong>` +
+    `<span class="uname">from @${esc(owner.username || 'user')}</span></div>` +
+    `<div class="grow"></div><div class="actions">` +
+    `<span class="chip ${on ? 'on' : ''}">${on ? 'on' : 'off'}</span>` +
+    `<button data-sub="${l.id}" data-on="${on ? 1 : 0}">${on ? 'Turn off' : 'Use these'}</button>` +
+    `</div></div>`;
+}
+
+function wireCloudRows() {
+  const bind = (attr, fn) => document.querySelectorAll('[' + attr + ']').forEach((b) =>
+    b.addEventListener('click', () => fn(b)));
+  bind('data-accept', (b) => respond(b.dataset.accept, true));
+  bind('data-decline', (b) => respond(b.dataset.decline, false));
+  bind('data-cancel', (b) => removeFriend(b.dataset.cancel));
+  bind('data-unfriend', (b) => removeFriend(b.dataset.unfriend));
+  bind('data-share', (b) => toggleShare(b.dataset.share, b.dataset.on === '1'));
+  bind('data-sub', (b) => toggleSub(b.dataset.sub, b.dataset.on === '1'));
+}
+
+// ---- cloud actions --------------------------------------------------------
+function authError(msg) {
+  const el = $('auth-error');
+  if (!msg) { el.style.display = 'none'; return; }
+  el.style.display = 'block'; el.textContent = msg;
+}
+
+async function doSignIn() {
+  authError('');
+  const email = $('si-email').value.trim();
+  const password = $('si-password').value;
+  if (!email || !password) { authError('Enter your email and password.'); return; }
+  const btn = $('btn-signin'); btn.disabled = true; btn.textContent = 'Signing in…';
+  const res = await cc('signIn', { email, password });
+  btn.disabled = false; btn.textContent = 'Sign in';
+  if (!res.ok) { authError(res.error); return; }
+  $('si-password').value = '';
+  await refreshCloud();
+  window.api.syncNow();
+}
+
+async function doSignUp() {
+  authError('');
+  const username = $('su-username').value.trim();
+  const displayName = $('su-display').value.trim();
+  const email = $('su-email').value.trim();
+  const password = $('su-password').value;
+  if (!username || !email || !password) { authError('Username, email and password are required.'); return; }
+  const btn = $('btn-signup'); btn.disabled = true; btn.textContent = 'Creating…';
+  const res = await cc('signUp', { email, password, username, displayName });
+  btn.disabled = false; btn.textContent = 'Create account';
+  if (!res.ok) { authError(res.error); return; }
+  if (res.data && res.data.needsConfirmation) {
+    authError('Account created. Check your email to confirm, then sign in. (Tip: disable email confirmation in Supabase for instant sign-in.)');
+    setAuthMode('signin');
+    return;
+  }
+  await refreshCloud();
+  window.api.syncNow();
+}
+
+async function doSignOut() {
+  await cc('signOut');
+  await refreshCloud();
+  window.api.syncNow();
+}
+
+async function addFriend() {
+  const input = $('add-friend-input');
+  const uname = input.value.trim();
+  const status = $('add-friend-status');
+  if (!uname) return;
+  const res = await cc('sendFriendRequest', uname);
+  status.style.display = 'inline-block';
+  if (res.ok) { status.className = 'pill ok'; status.textContent = 'Request sent to @' + res.data.to; input.value = ''; }
+  else { status.className = 'pill bad'; status.textContent = res.error; }
+  refreshCloud();
+}
+
+async function respond(id, accept) { await cc('respondToRequest', id, accept); refreshCloud(); window.api.syncNow(); }
+async function removeFriend(id) { await cc('removeFriend', id); refreshCloud(); }
+
+async function toggleShare(userId, currentlyOn) {
+  if (!cloud.myLibId) {
+    const l = await cc('ensureDefaultLibrary');
+    cloud.myLibId = l.ok ? l.data.id : null;
+  }
+  if (!cloud.myLibId) return;
+  if (currentlyOn) await cc('unshareLibrary', cloud.myLibId, userId);
+  else {
+    await cc('shareLibrary', cloud.myLibId, userId);
+    await cc('publishPersonal'); // make sure the friend gets current snippets
+  }
+  refreshCloud();
+}
+
+async function toggleSub(libId, currentlyOn) {
+  const next = new Set(cloud.subs);
+  if (currentlyOn) next.delete(libId); else next.add(libId);
+  await cc('setSubscriptions', [...next]);
+  await refreshCloud();
+  refresh(); // main re-synced the cloud cache; refresh Team view
+}
+
+async function publishCloud() {
+  const status = $('publish-cloud-status');
+  const btn = $('btn-publish-cloud'); btn.disabled = true; btn.textContent = 'Publishing…';
+  const res = await cc('publishPersonal');
+  btn.disabled = false; btn.textContent = 'Publish my snippets';
+  status.style.display = 'inline-block';
+  if (res.ok) { status.className = 'pill ok'; status.textContent = 'Published ' + res.data.count + ' snippet' + (res.data.count === 1 ? '' : 's'); }
+  else { status.className = 'pill bad'; status.textContent = res.error; }
+}
+
+async function setAutoPublish() {
+  await cc('setPublishToCloud', $('set-autopublish').checked);
+  refresh();
+}
+
+function setAuthMode(mode) {
+  document.querySelectorAll('.authtab').forEach((t) => t.classList.toggle('active', t.dataset.auth === mode));
+  $('auth-signin').style.display = mode === 'signin' ? 'block' : 'none';
+  $('auth-signup').style.display = mode === 'signup' ? 'block' : 'none';
+  authError('');
+}
+
+// ---- cloud wire-up --------------------------------------------------------
+document.querySelectorAll('.authtab').forEach((t) =>
+  t.addEventListener('click', () => setAuthMode(t.dataset.auth)));
+$('btn-signin').addEventListener('click', doSignIn);
+$('btn-signup').addEventListener('click', doSignUp);
+$('btn-signout').addEventListener('click', doSignOut);
+$('btn-add-friend').addEventListener('click', addFriend);
+$('add-friend-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') addFriend(); });
+$('btn-publish-cloud').addEventListener('click', publishCloud);
+$('set-autopublish').addEventListener('change', setAutoPublish);
+
 window.api.onState((s) => { state = s; render(); });
+window.api.cloud.onChange(() => refreshCloud());
 refresh();
+refreshCloud();

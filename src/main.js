@@ -11,6 +11,7 @@ const { Store } = require('./store');
 const { charFor, K } = require('./keymap');
 const inject = require('./inject');
 const { fetchTeamLibrary, writeTeamLibrary } = require('./sync');
+const { CloudService } = require('./cloud');
 
 // electron-store and uiohook are loaded lazily/defensively so a build issue in
 // one native module doesn't take down the whole app.
@@ -21,9 +22,18 @@ let uiohookError = null;
 try { ({ uIOhook } = require('uiohook-napi')); } catch (err) { uiohookError = err; }
 
 let store, expander, tray, win;
+let cloud = null;
+let storeBackend = null;
 let hookRunning = false;
 let syncTimer = null;
-let stats = { expansionsThisSession: 0, lastSyncAt: null, lastSyncError: null };
+let cloudSyncTimer = null;
+let stats = {
+  expansionsThisSession: 0,
+  lastSyncAt: null,
+  lastSyncError: null,
+  lastCloudSyncAt: null,
+  lastCloudSyncError: null,
+};
 
 // Shift tracking for the global hook.
 const SHIFT_CODES = new Set([42, 54]);
@@ -35,6 +45,7 @@ function initStore() {
   const backend = ElectronStore
     ? new ElectronStore({ name: 'trexpanda' })
     : memoryBackend();
+  storeBackend = backend;
   store = new Store(backend);
 }
 
@@ -211,13 +222,56 @@ async function syncNow() {
   }
 }
 
+/**
+ * Pull snippets from the cloud libraries the user has subscribed to (libraries
+ * friends have shared with them) into the local cloud cache, then rebuild the
+ * engine. No-op / clears the cache when cloud isn't configured or signed out.
+ */
+async function syncCloud() {
+  if (!cloud || !cloud.configured()) return { ok: false, error: 'Cloud not configured.' };
+  let signedIn = false;
+  try {
+    const st = await cloud.status();
+    signedIn = st.signedIn;
+  } catch (_) {}
+  if (!signedIn) {
+    store.setCloudCache([]);
+    rebuildEngine();
+    pushState();
+    return { ok: false, error: 'Not signed in.' };
+  }
+  const settings = store.getSettings();
+  try {
+    if (settings.publishToCloud) {
+      try { await cloud.publishSnippets(store.getPersonal()); } catch (_) {}
+    }
+    const ids = settings.cloudSubscriptions || [];
+    const snippets = ids.length ? await cloud.fetchLibrarySnippets(ids) : [];
+    store.setCloudCache(snippets);
+    stats.lastCloudSyncAt = new Date().toISOString();
+    stats.lastCloudSyncError = null;
+    rebuildEngine();
+    pushState();
+    return { ok: true, count: snippets.length };
+  } catch (err) {
+    stats.lastCloudSyncError = String(err.message || err);
+    pushState();
+    return { ok: false, error: stats.lastCloudSyncError };
+  }
+}
+
 function scheduleSync() {
   if (syncTimer) clearInterval(syncTimer);
+  if (cloudSyncTimer) clearInterval(cloudSyncTimer);
   const settings = store.getSettings();
   const mins = Math.max(1, Number(settings.syncIntervalMin) || 30);
   if (settings.teamSource) {
     syncNow();
     syncTimer = setInterval(syncNow, mins * 60 * 1000);
+  }
+  if (cloud && cloud.configured()) {
+    syncCloud();
+    cloudSyncTimer = setInterval(syncCloud, mins * 60 * 1000);
   }
 }
 
@@ -337,7 +391,44 @@ function registerIpc() {
     return { ok: true };
   });
 
-  ipcMain.handle('sync-now', () => syncNow());
+  ipcMain.handle('sync-now', async () => {
+    const res = await syncNow();
+    await syncCloud();
+    return res;
+  });
+
+  // ---- Cloud (accounts / friends / sharing) -------------------------------
+  // A few methods are handled locally because they touch the on-disk settings
+  // and the expansion engine; the rest are forwarded to the CloudService.
+  const cloudLocal = {
+    getSubscriptions: () => store.getSettings().cloudSubscriptions || [],
+    setSubscriptions: async (ids) => {
+      store.setSettings({ cloudSubscriptions: Array.isArray(ids) ? ids : [] });
+      return syncCloud();
+    },
+    setPublishToCloud: async (on) => {
+      store.setSettings({ publishToCloud: !!on });
+      return syncCloud();
+    },
+    syncCloud: () => syncCloud(),
+    // Publish the user's current personal snippets to their cloud library.
+    publishPersonal: () => cloud.publishSnippets(store.getPersonal()),
+  };
+
+  ipcMain.handle('cloud', async (_e, payload) => {
+    const { method, args = [] } = payload || {};
+    try {
+      if (typeof cloudLocal[method] === 'function') {
+        return { ok: true, data: await cloudLocal[method](...args) };
+      }
+      if (cloud && typeof cloud[method] === 'function') {
+        return { ok: true, data: await cloud[method](...args) };
+      }
+      return { ok: false, error: 'Unknown cloud method: ' + method };
+    } catch (err) {
+      return { ok: false, error: String(err.message || err) };
+    }
+  });
 
   // Team owner: publish current personal snippets to a shared folder.
   ipcMain.handle('publish-library', async (_e, folder) => {
@@ -367,6 +458,7 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     initStore();
+    try { cloud = new CloudService(storeBackend); } catch (err) { console.error('Cloud init failed:', err); cloud = null; }
     rebuildEngine();
     registerIpc();
     buildTray();

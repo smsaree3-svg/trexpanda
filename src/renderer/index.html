@@ -78,6 +78,28 @@
     background: linear-gradient(90deg, #eaf0ff 0%, #5b8cff 55%, #3aa0ff 100%);
     -webkit-background-clip: text; background-clip: text; color: transparent; }
   .brand .tagline { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  /* friends / sharing */
+  .list-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--panel2); }
+  .list-row .who { display: flex; flex-direction: column; line-height: 1.25; }
+  .list-row .who .uname { color: var(--muted); font-size: 12px; }
+  .list-row .grow { flex: 1; }
+  .list-row .actions { display: flex; gap: 6px; align-items: center; }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; flex: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #071019;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+  .inline-form { display: flex; gap: 8px; align-items: center; }
+  .inline-form input { flex: 1; }
+  .sectitle { font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); margin: 18px 0 8px; }
+  .authwrap { max-width: 420px; }
+  .authtabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .authtabs .authtab { padding: 6px 12px; border-radius: 8px; cursor: pointer; color: var(--muted);
+    border: 1px solid var(--line); background: var(--panel2); }
+  .authtabs .authtab.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--panel2);
+    border: 1px solid var(--line); color: var(--muted); }
+  .chip.on { color: var(--accent2); border-color: #2c6b52; }
 </style>
 </head>
 <body>
@@ -90,6 +112,7 @@
     </div>
   </div>
   <div class="status">
+    <span id="pill-account" class="pill" title="Your Trexpanda account">signed out</span>
     <span id="pill-expansion" class="pill">expansion</span>
     <span id="pill-hook" class="pill">hook</span>
     <span id="pill-inject" class="pill">inject</span>
@@ -99,6 +122,7 @@
 <div class="tabs">
   <div class="tab active" data-view="snippets">My Snippets</div>
   <div class="tab" data-view="team">Team Library</div>
+  <div class="tab" data-view="friends">Friends &amp; Sharing</div>
   <div class="tab" data-view="settings">Settings</div>
 </div>
 
@@ -135,6 +159,112 @@
       <tbody id="team-rows"></tbody>
     </table>
     <div id="team-empty" class="empty">No team library synced yet. Set a team source in Settings, then Sync.</div>
+  </section>
+
+  <!-- FRIENDS & SHARING -->
+  <section id="view-friends" class="view">
+    <!-- shown when Supabase isn't configured in this build -->
+    <div id="cloud-unavailable" class="banner warn" style="display:none"></div>
+
+    <!-- SIGNED OUT: login / signup -->
+    <div id="auth-panel" class="card authwrap" style="display:none">
+      <h3>Connect with friends &amp; coworkers</h3>
+      <p class="sub">Sign in to share your snippet libraries with people you add. Your snippets stay private until you explicitly share a library.</p>
+      <div class="authtabs">
+        <div class="authtab active" data-auth="signin">Sign in</div>
+        <div class="authtab" data-auth="signup">Create account</div>
+      </div>
+      <div id="auth-error" class="banner" style="display:none"></div>
+
+      <div id="auth-signin">
+        <label>Email</label>
+        <input type="text" id="si-email" placeholder="you@example.com" />
+        <label>Password</label>
+        <input type="password" id="si-password" placeholder="••••••••" />
+        <div class="modal-actions" style="justify-content:flex-start;margin-top:16px">
+          <button class="primary" id="btn-signin">Sign in</button>
+        </div>
+      </div>
+
+      <div id="auth-signup" style="display:none">
+        <label>Username</label>
+        <input type="text" id="su-username" placeholder="jordan" />
+        <p class="hint">3–24 characters. Friends add you by this name.</p>
+        <label>Display name (optional)</label>
+        <input type="text" id="su-display" placeholder="Jordan Lee" />
+        <label>Email</label>
+        <input type="text" id="su-email" placeholder="you@example.com" />
+        <label>Password</label>
+        <input type="password" id="su-password" placeholder="at least 6 characters" />
+        <div class="modal-actions" style="justify-content:flex-start;margin-top:16px">
+          <button class="primary" id="btn-signup">Create account</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SIGNED IN -->
+    <div id="account-panel" style="display:none">
+      <div class="card">
+        <div class="list-row" style="margin:0;border:none;background:transparent;padding:0">
+          <div class="avatar" id="me-avatar">?</div>
+          <div class="who">
+            <strong id="me-name">You</strong>
+            <span class="uname" id="me-username">@you</span>
+          </div>
+          <div class="grow"></div>
+          <button id="btn-signout">Sign out</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Add a friend</h3>
+        <p class="sub">Enter a coworker's username to send a friend request.</p>
+        <div class="inline-form">
+          <input type="text" id="add-friend-input" placeholder="username" />
+          <button class="primary" id="btn-add-friend">Send request</button>
+        </div>
+        <span id="add-friend-status" class="pill" style="display:none;margin-top:10px"></span>
+      </div>
+
+      <div class="card">
+        <h3>Friends &amp; requests</h3>
+
+        <div id="incoming-wrap" style="display:none">
+          <div class="sectitle">Requests to you</div>
+          <div id="incoming-list"></div>
+        </div>
+
+        <div id="outgoing-wrap" style="display:none">
+          <div class="sectitle">Sent requests</div>
+          <div id="outgoing-list"></div>
+        </div>
+
+        <div class="sectitle">Your friends</div>
+        <div id="friends-list"></div>
+        <div id="friends-empty" class="empty" style="padding:16px">No friends yet. Add someone by username above.</div>
+        <p class="hint">Toggle <b>Share</b> to give a friend your snippet library. They'll receive your snippets (and future updates) in their app.</p>
+      </div>
+
+      <div class="card">
+        <h3>Your shared library</h3>
+        <p class="sub">Push your current personal snippets to the cloud so friends you've shared with get the latest.</p>
+        <div class="modal-actions" style="justify-content:flex-start">
+          <button class="primary" id="btn-publish-cloud">Publish my snippets</button>
+          <span id="publish-cloud-status" class="pill" style="display:none"></span>
+        </div>
+        <div class="switch" style="margin-top:8px">
+          <input type="checkbox" id="set-autopublish" />
+          <label style="margin:0">Auto-publish my snippets on every sync</label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Libraries shared with you</h3>
+        <p class="sub">Turn one on to pull a friend's snippets into your expander. They merge into your Team Library and expand like any snippet.</p>
+        <div id="shared-list"></div>
+        <div id="shared-empty" class="empty" style="padding:16px">Nothing shared with you yet.</div>
+      </div>
+    </div>
   </section>
 
   <!-- SETTINGS -->

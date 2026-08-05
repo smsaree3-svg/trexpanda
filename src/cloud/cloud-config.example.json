@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy this file to cloud-config.json and fill in your Supabase project values. Find them in the Supabase dashboard under Project Settings -> API. The anon key is public/safe to ship. Alternatively set SUPABASE_URL and SUPABASE_ANON_KEY as environment variables instead of using this file.",
+  "url": "https://YOUR-PROJECT-ref.supabase.co",
+  "anonKey": "YOUR-anon-public-key"
+}
