@@ -1,0 +1,78 @@
+{
+  "name": "trexpanda",
+  "productName": "Trexpanda",
+  "version": "0.1.0",
+  "description": "Trexpanda — Type Less. Do More. Cross-platform text expander with team-shared snippet libraries. Type a short trigger, get a full snippet. Teams keep a shared library everyone syncs to.",
+  "author": "Amit Roda",
+  "license": "MIT",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/expander.test.js && node test/sync.test.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "uiohook-napi": "^1.5.4",
+    "@nut-tree-fork/nut-js": "^4.2.0",
+    "electron-updater": "^6.2.1",
+    "electron-store": "^8.2.0"
+  },
+  "build": {
+    "appId": "com.trexpanda.app",
+    "productName": "Trexpanda",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "!test/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "YOUR_GITHUB_USER",
+        "repo": "trexpanda"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "Trexpanda-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.png",
+      "artifactName": "Trexpanda.${ext}",
+      "hardenedRuntime": true,
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Trexpanda needs Accessibility access to detect what you type and to insert snippets."
+      }
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Utility"
+    }
+  }
+}

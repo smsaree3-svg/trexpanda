@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "updatedAt": "2026-08-05T00:00:00.000Z",
+  "snippets": [
+    { "trigger": ";co", "replacement": "Acme Corporation Pvt. Ltd.", "label": "Company legal name" },
+    { "trigger": ";addr", "replacement": "Acme Corporation\n4th Floor, Prestige Tower\nMG Road, Bengaluru 560001", "label": "Office address" },
+    { "trigger": ";sig", "replacement": "Best regards,\n$|\nAcme Corporation", "label": "Email signature (caret between name)" },
+    { "trigger": ";support", "replacement": "Thanks for reaching out! Your ticket has been logged and our team will respond within 24 hours.", "label": "Support acknowledgement" },
+    { "trigger": ";meet", "replacement": "Looking forward to our meeting on {date}. I'll send a calendar invite shortly.", "label": "Meeting confirmation" }
+  ]
+}

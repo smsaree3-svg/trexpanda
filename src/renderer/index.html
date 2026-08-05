@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trexpanda</title>
+<style>
+  :root {
+    --bg: #0f1420; --panel: #171d2b; --panel2: #1e2637; --line: #2a3346;
+    --text: #e6ebf5; --muted: #8a94a8; --accent: #5b8cff; --accent2: #3ad29f;
+    --danger: #ff6b6b; --warn: #ffcc66; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; }
+  header { padding: 16px 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px; background: var(--panel); }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .status { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--muted); }
+  .pill.ok { color: var(--accent2); border-color: #2c6b52; }
+  .pill.bad { color: var(--danger); border-color: #6b2c2c; }
+  .tabs { display: flex; gap: 4px; padding: 12px 22px 0; }
+  .tab { padding: 8px 16px; cursor: pointer; border-radius: 8px 8px 0 0;
+    color: var(--muted); border: 1px solid transparent; }
+  .tab.active { color: var(--text); background: var(--panel); border-color: var(--line);
+    border-bottom-color: var(--panel); }
+  main { padding: 20px 22px; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .banner { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px;
+    background: #2a1e1e; border: 1px solid #6b2c2c; color: #ffb0b0; font-size: 13px; }
+  .banner.warn { background: #2a271a; border-color: #6b5a2c; color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td code { background: var(--panel2); padding: 2px 7px; border-radius: 6px; color: var(--accent); }
+  .repl { color: var(--muted); max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-actions button { margin-left: 6px; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--text); padding: 8px 14px; border-radius: 8px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--danger); }
+  button.ghost { background: transparent; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; }
+  .toolbar .spacer { flex: 1; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  /* editor modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none;
+    align-items: center; justify-content: center; }
+  .modal-bg.show { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    width: 560px; max-width: 92vw; padding: 20px; }
+  .modal h3 { margin: 0 0 14px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; }
+  input[type=text], input[type=number], textarea, select {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--text);
+    padding: 9px 11px; border-radius: 8px; font: inherit; }
+  textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, Menlo, monospace; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 5px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px; margin-bottom: 16px; }
+  .card h3 { margin: 0 0 4px; font-size: 15px; }
+  .card p.sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .switch { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+  .switch input { width: auto; }
+  .kbd { font-family: ui-monospace, monospace; background: var(--panel2); padding: 1px 6px;
+    border-radius: 5px; border: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .mark { width: 38px; height: 38px; border-radius: 9px; background: #fff;
+    padding: 3px; object-fit: contain; box-shadow: 0 1px 0 rgba(255,255,255,.06); }
+  .brand .name { display: flex; flex-direction: column; line-height: 1.1; }
+  .brand .wordmark { font-size: 18px; font-weight: 700; letter-spacing: .01em;
+    background: linear-gradient(90deg, #eaf0ff 0%, #5b8cff 55%, #3aa0ff 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand .tagline { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <img class="mark" src="img/mark.png" alt="Trexpanda" />
+    <div class="name">
+      <span class="wordmark">Trexpanda</span>
+      <span class="tagline">Type Less. Do More.</span>
+    </div>
+  </div>
+  <div class="status">
+    <span id="pill-expansion" class="pill">expansion</span>
+    <span id="pill-hook" class="pill">hook</span>
+    <span id="pill-inject" class="pill">inject</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-view="snippets">My Snippets</div>
+  <div class="tab" data-view="team">Team Library</div>
+  <div class="tab" data-view="settings">Settings</div>
+</div>
+
+<main>
+  <div id="engine-banner"></div>
+
+  <!-- SNIPPETS -->
+  <section id="view-snippets" class="view active">
+    <div class="toolbar">
+      <button class="primary" id="btn-add">+ New snippet</button>
+      <span class="spacer"></span>
+      <span id="count" class="pill"></span>
+    </div>
+    <table>
+      <thead><tr><th>Trigger</th><th>Expands to</th><th></th></tr></thead>
+      <tbody id="snip-rows"></tbody>
+    </table>
+    <div id="snip-empty" class="empty">No snippets yet. Click “New snippet” to create your first one.</div>
+  </section>
+
+  <!-- TEAM -->
+  <section id="view-team" class="view">
+    <div class="toolbar">
+      <button id="btn-sync" class="primary">↻ Sync now</button>
+      <span id="sync-status" class="pill"></span>
+      <span class="spacer"></span>
+    </div>
+    <table>
+      <thead><tr><th>Trigger</th><th>Expands to</th><th>Label</th></tr></thead>
+      <tbody id="team-rows"></tbody>
+    </table>
+    <div id="team-empty" class="empty">No team library synced yet. Set a team source in Settings, then Sync.</div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" class="view">
+    <div class="card">
+      <h3>Team library source</h3>
+      <p class="sub">Where the shared snippet library lives. Everyone on the team points here and syncs.</p>
+      <label>Source (URL or folder path)</label>
+      <input type="text" id="set-source" placeholder="https://raw.githubusercontent.com/…/team-library.json  —or—  /Users/you/Dropbox/Team/" />
+      <p class="hint">Use a GitHub “raw” URL, any HTTP endpoint, or a synced folder (Dropbox / Google&nbsp;Drive / OneDrive / network share). A folder should contain <span class="kbd">team-library.json</span>.</p>
+      <div class="grid2">
+        <div>
+          <label>Auto-sync every (minutes)</label>
+          <input type="number" id="set-interval" min="1" value="30" />
+        </div>
+        <div>
+          <label>On trigger conflict</label>
+          <select id="set-teamwins">
+            <option value="false">My snippet wins (local override)</option>
+            <option value="true">Team snippet wins (updates enforced)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Behaviour</h3>
+      <div class="switch"><input type="checkbox" id="set-enabled" /> <label style="margin:0">Expansion enabled</label></div>
+      <div class="switch"><input type="checkbox" id="set-launch" /> <label style="margin:0">Launch at login</label></div>
+      <div class="modal-actions" style="justify-content:flex-start">
+        <button class="primary" id="btn-save-settings">Save settings</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Publish (team owners)</h3>
+      <p class="sub">Push your current snippets to a shared folder as <span class="kbd">team-library.json</span> so teammates can sync them.</p>
+      <div class="modal-actions" style="justify-content:flex-start">
+        <button id="btn-choose-folder">Choose folder…</button>
+        <button id="btn-publish">Publish my snippets</button>
+        <span id="publish-status" class="pill"></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- EDITOR MODAL -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h3 id="modal-title">New snippet</h3>
+    <label>Trigger</label>
+    <input type="text" id="edit-trigger" placeholder=";addr" />
+    <p class="hint">The text you type to fire the expansion. Prefix with a symbol like <span class="kbd">;</span> or <span class="kbd">/</span> to avoid firing on normal words.</p>
+    <label>Expands to</label>
+    <textarea id="edit-repl" placeholder="123 Market Street&#10;Bengaluru 560001"></textarea>
+    <p class="hint">Tokens: <span class="kbd">{date}</span> <span class="kbd">{time}</span> <span class="kbd">{datetime}</span>. Use <span class="kbd">$|</span> to place the cursor after expansion.</p>
+    <div class="switch"><input type="checkbox" id="edit-enabled" checked /> <label style="margin:0">Enabled</label></div>
+    <div class="modal-actions">
+      <button class="ghost" id="btn-cancel">Cancel</button>
+      <button class="primary" id="btn-save-snippet">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>
