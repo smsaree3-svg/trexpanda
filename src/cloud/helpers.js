@@ -62,9 +62,31 @@ function isValidUsername(name) {
   return typeof name === 'string' && /^[a-zA-Z0-9._-]{3,24}$/.test(name.trim());
 }
 
+/**
+ * Derive a starting username for an OAuth (e.g. Google) user who never picked
+ * one. Prefers an explicit handle, then the email local-part, then the name.
+ * Always returns a policy-valid string.
+ */
+function deriveUsername(meta = {}, user = {}) {
+  const emailLocal = (meta.email || user.email || '').split('@')[0].split('+')[0];
+  const candidates = [
+    meta.user_name,
+    meta.preferred_username,
+    emailLocal,
+    meta.name || meta.full_name,
+  ];
+  let base = '';
+  for (const c of candidates) {
+    if (c) { base = String(c).toLowerCase().replace(/[^a-z0-9._-]/g, ''); if (base) break; }
+  }
+  if (base.length < 3) base = ('user' + base).slice(0, 20) || 'user';
+  return base.slice(0, 20);
+}
+
 module.exports = {
   classifyFriendships,
   combineLibrarySnippets,
   profileLabel,
   isValidUsername,
+  deriveUsername,
 };

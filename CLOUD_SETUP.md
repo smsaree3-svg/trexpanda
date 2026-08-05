@@ -60,6 +60,36 @@ npm start
 For packaged builds distributed to a team, commit a `cloud-config.json` (the
 anon key is safe to bundle) so everyone's app points at the same project.
 
+## Optional: Google sign-in
+
+The app has a **Continue with Google** button. It uses a desktop-friendly PKCE
+flow: the app opens your browser, you sign in with Google, and the session is
+handed back to the app automatically. To enable it:
+
+1. **Create a Google OAuth client.** In the
+   [Google Cloud Console](https://console.cloud.google.com/apis/credentials):
+   *APIs & Services → Credentials → Create credentials → OAuth client ID →
+   Web application*. Under **Authorized redirect URIs** add your Supabase
+   callback:
+   ```
+   https://YOUR-ref.supabase.co/auth/v1/callback
+   ```
+   Copy the generated **Client ID** and **Client secret**.
+
+2. **Enable Google in Supabase.** *Authentication → Providers → Google* → turn
+   it on and paste the Client ID + secret → Save.
+
+3. **Allowlist the desktop redirect.** *Authentication → URL Configuration →
+   Redirect URLs* → add:
+   ```
+   http://localhost:8765/callback
+   ```
+   The app listens on that fixed loopback address to catch the sign-in. (If port
+   8765 is ever busy, close whatever is using it — the app will tell you.)
+
+That's it. New Google users get an auto-generated username from their email that
+their friends can use to add them.
+
 ## Using it
 
 1. Open the app → **Friends & Sharing** tab → **Create account** (pick a
@@ -91,7 +121,8 @@ Auto-sync), and on demand via **Sync now**.
 - This shares **snippets** (including the text/date tokens and attachments the
   app already supports). Macro/click recording is still the Phase-2 roadmap
   item — once built, macros ride this same sharing system.
-- Password reset and OAuth (Google/GitHub) aren't wired into the UI yet, but
-  Supabase supports both if you want to extend it.
+- Google sign-in is wired in (see above). GitHub or other providers would work
+  the same way — enable the provider in Supabase and add a button that calls the
+  same loopback flow. Password reset isn't wired into the UI yet.
 - One "default library" per user is used for sharing today; the schema already
   supports multiple named libraries if you want to expand the UI later.

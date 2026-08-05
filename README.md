@@ -151,8 +151,8 @@ A bare `[ ... ]` array of snippets is also accepted. A sample lives in
 ## Accounts, friends & sharing (optional)
 
 Beyond the file-based team library, Trexpanda can connect people directly: sign
-in, add friends/coworkers by username, and **share your snippet library** with
-specific people. When you share, they receive your snippets — and your future
+in (email/password or **Google**), add friends/coworkers by username, and
+**share your snippet library** with specific people. When you share, they receive your snippets — and your future
 updates — in their own app; when they share with you, you can pull their
 snippets into your expander with one click.
 

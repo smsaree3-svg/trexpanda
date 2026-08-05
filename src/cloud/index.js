@@ -17,7 +17,7 @@
 
 const { getClient, getLoadError, sdkAvailable } = require('./client');
 const config = require('./config');
-const { classifyFriendships, combineLibrarySnippets, isValidUsername } = require('./helpers');
+const { classifyFriendships, combineLibrarySnippets, isValidUsername, deriveUsername } = require('./helpers');
 
 const DEFAULT_LIBRARY_NAME = 'My Snippets';
 
@@ -111,6 +111,29 @@ class CloudService {
     return { ok: true };
   }
 
+  /**
+   * Sign in with Google via a browser + loopback redirect (PKCE). Opens the
+   * user's default browser, waits for the redirect, and creates a profile with
+   * a derived username on first login. Requires the Google provider to be
+   * enabled in the Supabase project (see CLOUD_SETUP.md).
+   */
+  async signInWithGoogle() {
+    const client = this._requireClient();
+    let shell = null;
+    try { ({ shell } = require('electron')); } catch (_) {}
+    const openExternal = shell
+      ? (u) => shell.openExternal(u)
+      : () => { throw new Error('Cannot open a browser in this environment.'); };
+
+    const { loopbackOAuth } = require('./oauth');
+    await loopbackOAuth({ client, provider: 'google', openExternal });
+
+    const { data: { user } } = await client.auth.getUser();
+    const meta = (user && user.user_metadata) || {};
+    await this._ensureProfile(deriveUsername(meta, user || {}), meta.full_name || meta.name);
+    return { ok: true };
+  }
+
   async signOut() {
     if (!this.configured()) return { ok: true };
     await this.client.auth.signOut();
@@ -129,15 +152,30 @@ class CloudService {
       .eq('id', user.id)
       .maybeSingle();
     if (existing) return;
-    const uname = isValidUsername(username)
-      ? username.trim()
-      : 'user_' + user.id.slice(0, 8);
-    const { error } = await client.from('profiles').insert({
-      id: user.id,
-      username: uname,
-      display_name: displayName || uname,
-    });
-    if (error && error.code !== '23505') throw error; // ignore "already exists"
+
+    const base = isValidUsername(username) ? username.trim() : 'user_' + user.id.slice(0, 8);
+    // A derived username (e.g. from a Google email) may already be taken, so
+    // retry with a short suffix until one sticks.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const candidate = attempt === 0
+        ? base
+        : `${base.slice(0, 16)}_${user.id.slice(0, 3 + attempt)}`;
+      const { error } = await client.from('profiles').insert({
+        id: user.id,
+        username: candidate,
+        display_name: displayName || candidate,
+      });
+      if (!error) return;
+      if (error.code === '23505') {
+        // Unique violation: either the profile id already exists (someone else
+        // created it concurrently) — stop — or the username is taken — retry.
+        const { data: now } = await client
+          .from('profiles').select('id').eq('id', user.id).maybeSingle();
+        if (now) return;
+        continue;
+      }
+      throw error;
+    }
   }
 
   async _uid() {

@@ -53,6 +53,10 @@ function getClient(backend) {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
+      // PKCE so the desktop OAuth flow can exchange a ?code= on a loopback
+      // redirect for a session (see cloud/oauth.js). Password sign-in is
+      // unaffected.
+      flowType: 'pkce',
     },
   });
   return client;

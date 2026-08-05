@@ -541,6 +541,20 @@ async function doSignUp() {
   window.api.syncNow();
 }
 
+async function doGoogle() {
+  authError('');
+  const btn = $('btn-google');
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = 'Opening your browser… complete sign-in there';
+  const res = await cc('signInWithGoogle');
+  btn.disabled = false;
+  btn.innerHTML = original;
+  if (!res.ok) { authError(res.error || 'Google sign-in failed.'); return; }
+  await refreshCloud();
+  window.api.syncNow();
+}
+
 async function doSignOut() {
   await cc('signOut');
   await refreshCloud();
@@ -609,6 +623,7 @@ function setAuthMode(mode) {
 // ---- cloud wire-up --------------------------------------------------------
 document.querySelectorAll('.authtab').forEach((t) =>
   t.addEventListener('click', () => setAuthMode(t.dataset.auth)));
+$('btn-google').addEventListener('click', doGoogle);
 $('btn-signin').addEventListener('click', doSignIn);
 $('btn-signup').addEventListener('click', doSignUp);
 $('btn-signout').addEventListener('click', doSignOut);

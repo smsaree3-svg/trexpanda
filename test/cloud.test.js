@@ -8,6 +8,7 @@ const {
   combineLibrarySnippets,
   profileLabel,
   isValidUsername,
+  deriveUsername,
 } = require('../src/cloud/helpers');
 const { combineShared, mergeSnippets } = require('../src/store');
 
@@ -83,6 +84,19 @@ test('isValidUsername enforces the 3-24 char policy', () => {
   assert.strictEqual(isValidUsername('has space'), false);
   assert.strictEqual(isValidUsername(''), false);
   assert.strictEqual(isValidUsername(null), false);
+});
+
+test('deriveUsername builds a valid handle from Google metadata', () => {
+  // explicit handle wins
+  assert.strictEqual(deriveUsername({ user_name: 'JordanL' }), 'jordanl');
+  // email local-part, sanitized
+  assert.strictEqual(deriveUsername({ email: 'jordan.lee+work@gmail.com' }), 'jordan.lee');
+  // full name, spaces stripped
+  assert.strictEqual(deriveUsername({ full_name: 'Jordan Lee' }), 'jordanlee');
+  // always returns a policy-valid, non-empty username
+  const u = deriveUsername({}, {});
+  assert.ok(isValidUsername(u), 'fallback should be valid: ' + u);
+  assert.ok(deriveUsername({ email: 'ab@x.com' }).length >= 3); // short local-part padded
 });
 
 console.log('\ncloud: ' + passed + ' passed');
