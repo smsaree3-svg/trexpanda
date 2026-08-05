@@ -321,11 +321,9 @@
     var base = 'https://github.com/' + GITHUB.owner + '/' + GITHUB.repo;
 
     if (configured){
-      win.href = base + '/releases/latest/download/Trexpanda-Setup.exe';
-      mac.href = base + '/releases/latest/download/Trexpanda.dmg';
-      note.innerHTML = 'Always serves the latest published build · ' +
-        '<a href="' + base + '/releases/latest" target="_blank" ' +
-        'style="color:#fff;text-decoration:underline">see all releases</a>';
+      win.href = '/download/windows';
+      mac.href = '/download/mac';
+      note.innerHTML = 'Free \u00b7 Windows & macOS \u00b7 always the latest version';
     } else {
       [win, mac].forEach(function(el){
         el.addEventListener('click', function(e){
