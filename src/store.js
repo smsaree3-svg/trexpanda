@@ -19,13 +19,27 @@ function normalizeSnippet(raw, origin) {
   if (!raw || typeof raw !== 'object') return null;
   const trigger = typeof raw.trigger === 'string' ? raw.trigger.trim() : '';
   if (!trigger) return null;
-  return {
+  const out = {
     trigger,
     replacement: typeof raw.replacement === 'string' ? raw.replacement : '',
     label: typeof raw.label === 'string' ? raw.label : trigger,
     enabled: raw.enabled !== false,
     origin: origin || raw.origin || 'personal',
   };
+  // Optional attachment: an image (pasted inline) or a file (copied to clipboard
+  // so it can be pasted as an attachment). Stored as base64 so it syncs with the
+  // team library JSON.
+  const a = raw.attachment;
+  if (a && typeof a === 'object' && (a.type === 'image' || a.type === 'file') &&
+      typeof a.data === 'string' && a.data) {
+    out.attachment = {
+      type: a.type,
+      name: typeof a.name === 'string' ? a.name : (a.type === 'image' ? 'image.png' : 'file'),
+      mime: typeof a.mime === 'string' ? a.mime : '',
+      data: a.data, // base64, no data-URL prefix
+    };
+  }
+  return out;
 }
 
 /**
