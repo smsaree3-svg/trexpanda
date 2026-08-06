@@ -75,6 +75,22 @@ function mergeSnippets(personal = [], team = [], opts = {}) {
   return Array.from(byTrigger.values());
 }
 
+/**
+ * Combine several shared snippet lists (e.g. the file-based team library plus
+ * one or more cloud libraries shared with you) into a single normalized,
+ * de-duplicated list tagged as team-origin. Later lists win on a collision.
+ */
+function combineShared(lists = []) {
+  const byTrigger = new Map();
+  for (const list of lists) {
+    for (const raw of list || []) {
+      const s = normalizeSnippet(raw, 'team');
+      if (s) byTrigger.set(s.trigger, s);
+    }
+  }
+  return Array.from(byTrigger.values());
+}
+
 /** Parse a team-library JSON payload into a snippet array. */
 function parseLibrary(payload) {
   let data = payload;
@@ -109,6 +125,16 @@ class Store {
     this.backend.set('teamSnippets', list);
   }
 
+  // Cloud cache: snippets pulled from libraries friends have shared with you
+  // (kept separate from the file-based team library so the two can't clobber
+  // each other's cache).
+  getCloudCache() {
+    return this.backend.get('cloudSnippets', []);
+  }
+  setCloudCache(list) {
+    this.backend.set('cloudSnippets', list);
+  }
+
   getSettings() {
     return this.backend.get('settings', {
       teamSource: '', // URL or folder path to the shared library
@@ -116,6 +142,8 @@ class Store {
       teamWins: false, // conflict resolution
       enabled: true, // master on/off for expansion
       launchAtLogin: false,
+      cloudSubscriptions: [], // library ids (shared with me) to pull on sync
+      publishToCloud: false, // auto-publish personal snippets to my cloud library
     });
   }
   setSettings(next) {
@@ -125,8 +153,12 @@ class Store {
   /** The flat list the Expander should use right now. */
   effectiveSnippets() {
     const s = this.getSettings();
-    return mergeSnippets(this.getPersonal(), this.getTeamCache(), { teamWins: s.teamWins });
+    // Everything shared with this user — file-based team library plus any cloud
+    // libraries friends have shared — is merged into one "team" pool first, then
+    // the personal list is layered on top per the conflict setting.
+    const shared = combineShared([this.getTeamCache(), this.getCloudCache()]);
+    return mergeSnippets(this.getPersonal(), shared, { teamWins: s.teamWins });
   }
 }
 
-module.exports = { normalizeSnippet, mergeSnippets, parseLibrary, Store };
+module.exports = { normalizeSnippet, mergeSnippets, combineShared, parseLibrary, Store };
