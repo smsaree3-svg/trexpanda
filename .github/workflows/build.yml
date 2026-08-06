@@ -58,18 +58,37 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Enable code signing ONLY when a certificate secret is actually present.
+      # We must not export an empty CSC_LINK — electron-builder would try to
+      # resolve "" as a certificate path and fail. So the signing vars are set
+      # into $GITHUB_ENV here only if the matching secret is non-empty; otherwise
+      # the build runs unsigned and succeeds. See SIGNING.md.
+      - name: Configure code signing
+        shell: bash
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          if [ "${{ matrix.platform }}" = "win" ] && [ -n "$WIN_CSC_LINK" ]; then
+            echo "CSC_LINK=$WIN_CSC_LINK" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$WIN_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "Signing enabled (Windows certificate present)."
+          elif [ "${{ matrix.platform }}" = "mac" ] && [ -n "$MAC_CSC_LINK" ]; then
+            echo "CSC_LINK=$MAC_CSC_LINK" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$MAC_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "Signing enabled (macOS certificate present)."
+          else
+            echo "No signing certificate configured — building unsigned."
+          fi
+
       - name: Build the installer
         run: npm run dist:${{ matrix.platform }}
         env:
-          # Auto-discovery of a local keychain identity stays off; signing is
-          # driven explicitly by the CSC_* secrets below. When those secrets are
-          # empty (none configured), electron-builder simply produces an
-          # UNSIGNED build — the workflow still succeeds.
+          # No local keychain auto-discovery; signing (if any) comes from the
+          # CSC_LINK set by the previous step. Absent that, the build is unsigned.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          # Code-signing certificate (base64-encoded .pfx/.p12) + its password.
-          # Windows uses WIN_CSC_*, macOS uses MAC_CSC_*. See SIGNING.md.
-          CSC_LINK: ${{ matrix.platform == 'win' && secrets.WIN_CSC_LINK || secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ matrix.platform == 'win' && secrets.WIN_CSC_KEY_PASSWORD || secrets.MAC_CSC_KEY_PASSWORD }}
           # macOS notarization (only used on the mac runner when these are set).
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
