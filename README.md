@@ -183,7 +183,10 @@ To turn it on:
    Authenticode certificate on Windows).
 3. `electron-builder` publishes releases; installed apps then update themselves.
 
-Until configured, the updater is a no-op and does no harm.
+Until configured, the updater is a no-op and does no harm. The build workflow is
+already wired to sign releases and publish update metadata once you add a signing
+certificate + secrets — see **[SIGNING.md](SIGNING.md)** for the full setup
+(Windows Authenticode and, optionally, macOS notarization).
 
 ---
 

@@ -61,7 +61,21 @@ jobs:
       - name: Build the installer
         run: npm run dist:${{ matrix.platform }}
         env:
+          # Auto-discovery of a local keychain identity stays off; signing is
+          # driven explicitly by the CSC_* secrets below. When those secrets are
+          # empty (none configured), electron-builder simply produces an
+          # UNSIGNED build — the workflow still succeeds.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Code-signing certificate (base64-encoded .pfx/.p12) + its password.
+          # Windows uses WIN_CSC_*, macOS uses MAC_CSC_*. See SIGNING.md.
+          CSC_LINK: ${{ matrix.platform == 'win' && secrets.WIN_CSC_LINK || secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'win' && secrets.WIN_CSC_KEY_PASSWORD || secrets.MAC_CSC_KEY_PASSWORD }}
+          # macOS notarization (only used on the mac runner when these are set).
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Lets electron-builder attach update metadata to the GitHub Release.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload installers as artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
