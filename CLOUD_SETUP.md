@@ -57,8 +57,18 @@ export SUPABASE_ANON_KEY="YOUR-anon-public-key"
 npm start
 ```
 
-For packaged builds distributed to a team, commit a `cloud-config.json` (the
-anon key is safe to bundle) so everyone's app points at the same project.
+For packaged builds distributed to a team, the GitHub Actions build workflow
+bakes the config into the installer automatically. Set two **repository
+variables** (repo → Settings → Secrets and variables → Actions → **Variables**
+tab → New repository variable):
+
+- `SUPABASE_URL` — your project URL
+- `SUPABASE_ANON_KEY` — your anon/publishable key (safe to expose; RLS protects data)
+
+The `Bundle Supabase config` step in `.github/workflows/build.yml` writes
+`src/cloud/cloud-config.json` from those variables before packaging, so the
+`.exe`/`.dmg` it produces have the cloud features working out of the box. If the
+variables aren't set, the app still builds and just runs with cloud features off.
 
 ## Optional: Google sign-in
 

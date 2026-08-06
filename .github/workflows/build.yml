@@ -30,6 +30,23 @@ jobs:
         with:
           node-version: '20'
 
+      # Bake the Supabase connection into the build so the packaged app has the
+      # cloud features (accounts / friends / sharing) working out of the box.
+      # Values come from repository Variables (Settings -> Secrets and variables
+      # -> Actions -> Variables): SUPABASE_URL and SUPABASE_ANON_KEY. The anon
+      # key is safe to ship in a client — access is controlled by RLS. If the
+      # variables aren't set, an empty config is written and the app simply runs
+      # with the cloud features switched off (no build failure).
+      - name: Bundle Supabase config
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          mkdir -p src/cloud
+          node -e "const fs=require('fs');fs.writeFileSync('src/cloud/cloud-config.json',JSON.stringify({url:process.env.SUPABASE_URL||'',anonKey:process.env.SUPABASE_ANON_KEY||''},null,2)+'\n');"
+          node -e "const c=require('./src/cloud/cloud-config.json');console.log('cloud-config bundled — url set:',!!c.url,'| anonKey set:',!!c.anonKey);"
+
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
