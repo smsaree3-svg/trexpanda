@@ -40,6 +40,18 @@ function makeStorage(backend) {
 let client = null;
 
 /**
+ * supabase-js eagerly constructs a Realtime client, which requires a global
+ * WebSocket. Electron's MAIN process (Node 20) has no global WebSocket, so
+ * createClient() would throw "native WebSocket not found" and take the whole
+ * cloud service down. We never open realtime connections, but we must satisfy
+ * the check — provide the pure-JS `ws` implementation as the global.
+ */
+function ensureWebSocket() {
+  if (typeof globalThis.WebSocket !== 'undefined') return;
+  try { globalThis.WebSocket = require('ws'); } catch (_) { /* surfaced via the createClient catch below */ }
+}
+
+/**
  * @param {object} backend  an electron-store (or get/set compatible) instance,
  *                          used to persist the auth session.
  * @returns {import('@supabase/supabase-js').SupabaseClient|null}
@@ -47,18 +59,26 @@ let client = null;
 function getClient(backend) {
   if (client) return client;
   if (!createClient || !config.isConfigured()) return null;
-  client = createClient(config.url, config.anonKey, {
-    auth: {
-      storage: makeStorage(backend),
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: false,
-      // PKCE so the desktop OAuth flow can exchange a ?code= on a loopback
-      // redirect for a session (see cloud/oauth.js). Password sign-in is
-      // unaffected.
-      flowType: 'pkce',
-    },
-  });
+  ensureWebSocket();
+  try {
+    client = createClient(config.url, config.anonKey, {
+      auth: {
+        storage: makeStorage(backend),
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        // PKCE so the desktop OAuth flow can exchange a ?code= on a loopback
+        // redirect for a session (see cloud/oauth.js). Password sign-in is
+        // unaffected.
+        flowType: 'pkce',
+      },
+    });
+  } catch (err) {
+    // Never let client construction crash the whole cloud service — record it
+    // and degrade to a clear "unavailable" state instead of a broken IPC layer.
+    loadError = err;
+    client = null;
+  }
   return client;
 }
 
