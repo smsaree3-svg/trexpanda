@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, nativeImage, shell, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, nativeImage, shell, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -22,6 +22,7 @@ let uiohookError = null;
 try { ({ uIOhook } = require('uiohook-napi')); } catch (err) { uiohookError = err; }
 
 let store, expander, tray, win;
+let suggestWin = null; // live autocomplete popup
 let cloud = null;
 let storeBackend = null;
 let hookRunning = false;
@@ -72,8 +73,23 @@ function startHook() {
   if (!uIOhook || hookRunning) return;
   uIOhook.on('keydown', onKeyDown);
   uIOhook.on('keyup', onKeyUp);
+  uIOhook.on('mousedown', onMouseDown);
   uIOhook.start();
   hookRunning = true;
+}
+
+// A click elsewhere means the typing context is gone — reset the buffer and
+// dismiss the suggestion popup. Clicks that land inside the popup are ignored
+// here so the renderer can handle the selection.
+function onMouseDown(e) {
+  if (suggestWin && !suggestWin.isDestroyed() && suggestWin.isVisible()) {
+    const b = suggestWin.getBounds();
+    if (e && e.x >= b.x && e.x <= b.x + b.width && e.y >= b.y && e.y <= b.y + b.height) {
+      return; // inside the popup — let the click become a selection
+    }
+  }
+  expander.reset();
+  hideSuggest();
 }
 
 function stopHook() {
@@ -93,19 +109,21 @@ async function onKeyDown(e) {
   if (SHIFT_CODES.has(e.keycode)) { shiftDown = true; return; }
 
   // Keys that break/adjust the typing context.
-  if (e.keycode === K.Backspace) { expander.onBackspace(); return; }
+  if (e.keycode === K.Backspace) { expander.onBackspace(); refreshSuggestions(settings); return; }
   if (e.keycode === K.Enter || e.keycode === K.Tab || e.keycode === K.Escape) {
     expander.reset();
+    hideSuggest();
     return;
   }
 
   const ch = charFor(e.keycode, shiftDown);
-  if (ch == null) { expander.reset(); return; }
+  if (ch == null) { expander.reset(); hideSuggest(); return; }
 
   const action = expander.onChar(ch);
-  if (!action) return;
+  if (!action) { refreshSuggestions(settings); return; }
 
   // Expansion matched — inject the replacement.
+  hideSuggest();
   if (inject.available()) {
     try {
       if (action.attachment) {
@@ -278,6 +296,115 @@ function scheduleSync() {
 }
 
 // ---------------------------------------------------------------------------
+// Live autocomplete popup
+// ---------------------------------------------------------------------------
+
+// Fixed metrics — kept in sync with src/renderer/suggest.html.
+const SUGGEST = { width: 440, rowH: 50, headH: 32, pad: 10, maxItems: 6 };
+
+function createSuggestWindow() {
+  if (suggestWin && !suggestWin.isDestroyed()) return suggestWin;
+  suggestWin = new BrowserWindow({
+    width: SUGGEST.width,
+    height: 200,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: false, // never steal focus from the app the user is typing in
+    alwaysOnTop: true,
+    hasShadow: false,
+    acceptFirstMouse: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'suggest-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  suggestWin.setAlwaysOnTop(true, 'screen-saver');
+  try { suggestWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
+  suggestWin.loadFile(path.join(__dirname, 'renderer', 'suggest.html'));
+  suggestWin.on('closed', () => { suggestWin = null; });
+  return suggestWin;
+}
+
+/** Place the popup near the mouse cursor, flipping/clamping to stay on-screen. */
+function positionSuggest(count) {
+  const w = SUGGEST.width;
+  const h = SUGGEST.headH + Math.min(count, SUGGEST.maxItems) * SUGGEST.rowH + SUGGEST.pad;
+  let pt;
+  try { pt = screen.getCursorScreenPoint(); } catch (_) { pt = { x: 300, y: 300 }; }
+  const area = screen.getDisplayNearestPoint(pt).workArea;
+  let x = pt.x + 14;
+  let y = pt.y + 20;
+  if (x + w > area.x + area.width) x = area.x + area.width - w - 8;
+  if (y + h > area.y + area.height) y = pt.y - h - 8; // flip above the cursor
+  if (x < area.x) x = area.x + 8;
+  if (y < area.y) y = area.y + 8;
+  suggestWin.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: Math.round(h) });
+}
+
+function showSuggest(sugg) {
+  createSuggestWindow();
+  positionSuggest(sugg.items.length);
+  suggestWin.webContents.send('suggest-data', sugg);
+  if (!suggestWin.isVisible()) suggestWin.showInactive(); // show WITHOUT focusing
+}
+
+function hideSuggest() {
+  if (suggestWin && !suggestWin.isDestroyed() && suggestWin.isVisible()) suggestWin.hide();
+}
+
+/** Only pop up for a token that begins a trigger and reads like one. */
+function shouldSuggest(token) {
+  if (!token) return false;
+  // Symbol-prefixed triggers (the recommended style) show from the first char;
+  // plain-word triggers show after 2 characters to avoid noise while writing.
+  const startsWithSymbol = /^[^\p{L}\p{N}\s]/u.test(token);
+  return token.length >= (startsWithSymbol ? 1 : 2);
+}
+
+function refreshSuggestions(settings) {
+  if (!settings || settings.showSuggestions === false) { hideSuggest(); return; }
+  const sugg = expander.suggestions(SUGGEST.maxItems);
+  if (!sugg.items.length || !shouldSuggest(sugg.token)) { hideSuggest(); return; }
+  showSuggest(sugg);
+}
+
+/** Insert the snippet the user clicked in the popup. */
+async function insertSuggestion(trigger) {
+  const token = (expander.suggestions(1).token) || '';
+  const snippet = expander.map.get(trigger);
+  hideSuggest();
+  expander.reset();
+  if (!snippet || !inject.available()) return;
+
+  const rendered = expander.render(snippet.replacement || '');
+  const action = {
+    trigger,
+    replacement: rendered.text,
+    html: snippet.html ? expander.renderHtml(snippet.html) : null,
+    backspaces: token.length, // delete only what the user has typed so far
+    caretBack: rendered.caretBack,
+    attachment: snippet.attachment || null,
+  };
+  try {
+    if (action.attachment) await expandAttachment(action);
+    else if (action.html) await inject.expandHtml(action, clipboard);
+    else await inject.expand(action, clipboard);
+    stats.expansionsThisSession++;
+    pushState();
+  } catch (err) {
+    console.error('Suggestion insert failed:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Windows & tray
 // ---------------------------------------------------------------------------
 
@@ -446,6 +573,10 @@ function registerIpc() {
     const res = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
     return res.canceled ? null : res.filePaths[0];
   });
+
+  // Live autocomplete popup: renderer tells us which suggestion was clicked.
+  ipcMain.on('suggest-pick', (_e, trigger) => { insertSuggestion(trigger); });
+  ipcMain.on('suggest-dismiss', () => { expander.reset(); hideSuggest(); });
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +596,7 @@ if (!gotLock) {
     registerIpc();
     buildTray();
     createWindow();
+    createSuggestWindow(); // pre-warm the popup so first show is instant
 
     if (store.getSettings().enabled) startHook();
     scheduleSync();

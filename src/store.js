@@ -142,6 +142,7 @@ class Store {
       teamWins: false, // conflict resolution
       enabled: true, // master on/off for expansion
       launchAtLogin: false,
+      showSuggestions: true, // live autocomplete popup while typing a trigger
       cloudSubscriptions: [], // library ids (shared with me) to pull on sync
       publishToCloud: false, // auto-publish personal snippets to my cloud library
     });
