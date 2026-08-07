@@ -8,7 +8,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test/expander.test.js && node test/sync.test.js && node test/cloud.test.js",
+    "test": "node test/expander.test.js && node test/sync.test.js && node test/cloud.test.js && node test/entitlements.test.js",
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
