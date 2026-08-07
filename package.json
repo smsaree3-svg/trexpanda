@@ -3,7 +3,7 @@
   "productName": "Trexpanda",
   "version": "0.2.0",
   "description": "Trexpanda — Type Less. Do More. Cross-platform text expander with team-shared snippet libraries. Type a short trigger, get a full snippet. Teams keep a shared library everyone syncs to.",
-  "author": "Amit Roda",
+  "author": "Lumisha LLC",
   "license": "MIT",
   "main": "src/main.js",
   "scripts": {
@@ -29,6 +29,7 @@
   "build": {
     "appId": "com.trexpanda.app",
     "productName": "Trexpanda",
+    "copyright": "Copyright © 2026 Lumisha LLC",
     "files": [
       "src/**/*",
       "assets/**/*",
@@ -49,7 +50,8 @@
         "nsis"
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "Trexpanda-Setup.${ext}"
+      "artifactName": "Trexpanda-Setup.${ext}",
+      "publisherName": "Lumisha LLC"
     },
     "nsis": {
       "oneClick": false,
