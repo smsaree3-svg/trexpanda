@@ -2,7 +2,7 @@
 
 // Renderer logic. Talks to the main process only through window.api (preload).
 
-let state = { personal: [], team: [], settings: {}, stats: {}, engine: {} };
+let state = { personal: [], team: [], settings: {}, stats: {}, engine: {}, plan: { plan: 'free', isPro: false, limit: 20 } };
 let editIndex = -1; // -1 = new snippet
 
 const $ = (id) => document.getElementById(id);
@@ -15,6 +15,7 @@ document.querySelectorAll('.tab').forEach((tab) => {
     tab.classList.add('active');
     $('view-' + tab.dataset.view).classList.add('active');
     if (tab.dataset.view === 'friends') refreshCloud();
+    if (tab.dataset.view === 'admin') loadAdmin();
   });
 });
 
@@ -22,8 +23,154 @@ document.querySelectorAll('.tab').forEach((tab) => {
 function render() {
   renderStatus();
   renderSnippets();
+  renderPlan();
   renderTeam();
   renderSettings();
+}
+
+// ---- plan / access (trial · Pro · expired) --------------------------------
+
+function plan() { return state.plan || { state: 'signed_out' }; }
+function planState() { return plan().state || 'signed_out'; }
+function isPaid() { return !!plan().isPaid; }
+function hasAccess() { return !!plan().hasAccess; }
+function canAdd() { return !!plan().canAdd; }
+function canExport() { return !!plan().canExport; }
+function isAdmin() { return !!plan().isAdmin; }
+
+/** Short label + pill class for the current access state. */
+function planBadge() {
+  const p = plan();
+  switch (p.state) {
+    case 'pro':      return { text: 'Pro · active', cls: 'ok' };
+    case 'coupon':   return { text: p.unlockedUntil ? 'Unlocked' : 'Unlocked · lifetime', cls: 'ok' };
+    case 'trialing': return { text: 'Trial · ' + p.trialDaysLeft + ' day' + (p.trialDaysLeft === 1 ? '' : 's') + ' left',
+                              cls: p.trialDaysLeft <= 3 ? 'bad' : '' };
+    case 'expired':  return { text: 'Trial ended', cls: 'bad' };
+    default:         return { text: 'Sign in to start trial', cls: 'bad' };
+  }
+}
+
+/** Update the toolbar badge, the top banner, the export button, and the billing card. */
+function renderPlan() {
+  const p = plan();
+  const badge = planBadge();
+
+  const pill = $('pill-plan');
+  if (pill) { pill.style.display = 'inline-block'; pill.className = 'pill ' + badge.cls; pill.textContent = badge.text; }
+
+  const upTop = $('btn-upgrade-top');
+  if (upTop) upTop.style.display = (isPaid() || planState() === 'signed_out') ? 'none' : 'inline-block';
+
+  // Banner across the snippets view for the states that need action.
+  const banner = $('plan-banner');
+  if (banner) {
+    if (planState() === 'expired') {
+      banner.style.display = 'block'; banner.className = 'banner';
+      banner.innerHTML = '⛔ Your free trial has ended. Snippets won\'t expand until you subscribe. ' +
+        'Your snippets are safe — <a href="#" id="lnk-upgrade1">subscribe</a> or ' +
+        '<a href="#" id="lnk-redeem1">redeem a code</a> to switch it back on.';
+    } else if (planState() === 'signed_out') {
+      banner.style.display = 'block'; banner.className = 'banner';
+      banner.innerHTML = '👋 Sign in to start your <b>30-day free trial</b>. ' +
+        '<a href="#" id="lnk-signin1">Go to Account</a>.';
+    } else if (planState() === 'trialing' && p.trialDaysLeft <= 5) {
+      banner.style.display = 'block'; banner.className = 'banner';
+      banner.innerHTML = '⏳ ' + p.trialDaysLeft + ' day' + (p.trialDaysLeft === 1 ? '' : 's') +
+        ' left in your trial. <a href="#" id="lnk-upgrade1">Subscribe</a> to keep going (and unlock export).';
+    } else {
+      banner.style.display = 'none'; banner.innerHTML = '';
+    }
+    const lu = $('lnk-upgrade1'); if (lu) lu.onclick = (e) => { e.preventDefault(); goToAccountTab(); startUpgrade(); };
+    const lr = $('lnk-redeem1');  if (lr) lr.onclick = (e) => { e.preventDefault(); goToAccountTab(); const el = $('redeem-code'); if (el) el.focus(); };
+    const ls = $('lnk-signin1');  if (ls) ls.onclick = (e) => { e.preventDefault(); goToAccountTab(); };
+  }
+
+  // Export is paid-only (off during trial and after expiry).
+  const exp = $('btn-export');
+  if (exp) {
+    exp.disabled = !canExport();
+    exp.title = canExport() ? '' : 'Export is available on Pro — subscribe or redeem a code to enable it.';
+  }
+
+  // Account panel billing card.
+  const bPlan = $('billing-plan'), bSub = $('billing-sub');
+  const bUp = $('btn-upgrade'), bManage = $('btn-manage-billing');
+  if (bPlan) bPlan.textContent = ({ pro: 'Pro', coupon: 'Pro (code)', trialing: 'Free trial', expired: 'Expired', signed_out: 'Signed out' })[planState()] || '—';
+  if (bSub) {
+    if (planState() === 'pro') {
+      const cpe = p.subStatus && state.plan.currentPeriodEnd;
+      bSub.textContent = 'Unlimited snippets, export, and cloud sync' + (cpe ? ' · renews ' + new Date(cpe).toLocaleDateString() : '');
+    } else if (planState() === 'coupon') {
+      bSub.textContent = p.unlockedUntil ? 'Unlocked until ' + new Date(p.unlockedUntil).toLocaleDateString() : 'Unlocked — lifetime';
+    } else if (planState() === 'trialing') {
+      bSub.textContent = p.trialDaysLeft + ' day' + (p.trialDaysLeft === 1 ? '' : 's') + ' left · export unlocks on Pro';
+    } else if (planState() === 'expired') {
+      bSub.textContent = 'Trial ended — subscribe or redeem a code to re-enable expansion';
+    } else {
+      bSub.textContent = 'Sign in to start your 30-day free trial';
+    }
+  }
+  if (bUp) bUp.style.display = isPaid() ? 'none' : 'inline-block';
+  // The Stripe portal only applies to a real subscription (not coupon unlocks).
+  if (bManage) bManage.style.display = (planState() === 'pro') ? 'inline-block' : 'none';
+
+  // Admin tab visibility.
+  const adminTab = document.querySelector('.tab[data-view="admin"]');
+  if (adminTab) adminTab.style.display = isAdmin() ? '' : 'none';
+}
+
+/** Switch to the Account/Friends tab (where billing + redeem live). */
+function goToAccountTab() {
+  const tab = document.querySelector('.tab[data-view="friends"]');
+  if (tab) tab.click();
+}
+
+/** Start Stripe Checkout. Requires being signed in (access is account-bound). */
+async function startUpgrade() {
+  if (!plan().signedIn) {
+    goToAccountTab();
+    billingStatus('Sign in (or create an account) first — your subscription is tied to your account.', 'bad');
+    return;
+  }
+  billingStatus('Opening secure checkout in your browser…', 'ok');
+  const res = await cc('startCheckout');
+  if (!res.ok) { billingStatus(res.error || 'Could not start checkout.', 'bad'); return; }
+  billingStatus('Complete payment in your browser, then return here — your plan updates automatically.', 'ok');
+}
+
+/** Open the Stripe Customer Portal to manage/cancel. */
+async function manageBilling() {
+  billingStatus('Opening the billing portal in your browser…', 'ok');
+  const res = await cc('openBillingPortal');
+  if (!res.ok) billingStatus(res.error || 'Could not open the billing portal.', 'bad');
+}
+
+/** Redeem a coupon code. */
+async function doRedeem() {
+  const el = $('redeem-code');
+  const code = (el && el.value || '').trim();
+  if (!code) { redeemStatus('Enter a code.', 'bad'); return; }
+  if (!plan().signedIn) { redeemStatus('Sign in first, then redeem your code.', 'bad'); return; }
+  redeemStatus('Redeeming…', '');
+  const res = await cc('redeemCoupon', code);
+  if (!res.ok) { redeemStatus(res.error || 'Could not redeem code.', 'bad'); return; }
+  const data = res.data || {};
+  if (data.ok === false) { redeemStatus(data.error || 'Invalid code.', 'bad'); return; }
+  if (el) el.value = '';
+  redeemStatus('Success — Pro unlocked!', 'ok');
+  await cc('refreshEntitlement');
+}
+
+function billingStatus(msg, kind) { pill('billing-status', msg, kind); }
+function redeemStatus(msg, kind) { pill('redeem-status', msg, kind); }
+function pill(id, msg, kind) {
+  const el = $(id);
+  if (!el) return;
+  if (!msg) { el.style.display = 'none'; return; }
+  el.style.display = 'inline-block';
+  el.className = 'pill ' + (kind || '');
+  el.textContent = msg;
 }
 
 function renderStatus() {
@@ -110,6 +257,14 @@ function renderSettings() {
 let editAttachment = null; // {type, name, mime, data} while editing
 
 function openEditor(index) {
+  // Gate creating a NEW snippet when the user has no access (trial expired or
+  // signed out). Editing an existing one (index >= 0) is always allowed.
+  if (index < 0 && !canAdd()) {
+    goToAccountTab();
+    if (planState() === 'signed_out') billingStatus('Sign in to start your free trial and add snippets.', 'bad');
+    else billingStatus('Your trial has ended. Subscribe or redeem a code to add new snippets.', 'bad');
+    return;
+  }
   editIndex = index;
   const s = index >= 0 ? state.personal[index] : { trigger: '', replacement: '', enabled: true };
   $('modal-title').textContent = index >= 0 ? 'Edit snippet' : 'New snippet';
@@ -184,7 +339,14 @@ async function saveSnippet() {
   if (editAttachment) snippet.attachment = editAttachment;
   const list = (state.personal || []).slice();
   if (editIndex >= 0) list[editIndex] = snippet; else list.push(snippet);
-  await window.api.savePersonal(list);
+  const res = await window.api.savePersonal(list);
+  if (res && res.ok === false && res.error === 'locked') {
+    closeEditor();
+    goToAccountTab();
+    if (res.state === 'signed_out') billingStatus('Sign in to start your free trial and add snippets.', 'bad');
+    else billingStatus('Your trial has ended. Subscribe or redeem a code to add new snippets.', 'bad');
+    return;
+  }
   closeEditor();
   refresh();
 }
@@ -323,7 +485,11 @@ function importCSV(text) {
 
   if (!added && !updated) { setImportStatus('no valid rows found (need a trigger column)', 'bad'); return; }
 
-  window.api.savePersonal(list).then(() => {
+  window.api.savePersonal(list).then((res) => {
+    if (res && res.ok === false && res.error === 'locked') {
+      setImportStatus('import blocked: your trial has ended. Subscribe or redeem a code to add snippets.', 'bad');
+      return;
+    }
     const parts = [];
     if (added) parts.push(added + ' added');
     if (updated) parts.push(updated + ' updated');
@@ -334,6 +500,12 @@ function importCSV(text) {
 }
 
 function exportCSV() {
+  // Export is a paid-only feature (off during the trial and after it ends).
+  if (!canExport()) {
+    goToAccountTab();
+    billingStatus('Export is a Pro feature. Subscribe or redeem a code to enable it.', 'bad');
+    return;
+  }
   const list = state.personal || [];
   const lines = ['trigger,replacement,label'];
   list.forEach((s) => {
@@ -397,8 +569,125 @@ function rtRestoreSelection() {
 
 async function refresh() { state = await window.api.getState(); render(); }
 
+// ---- admin panel (visible only to admins) ---------------------------------
+function fmtDate(v) { return v ? new Date(v).toLocaleDateString() : '—'; }
+
+function userStateLabel(u) {
+  const now = Date.now();
+  const grantActive = u.has_grant && (u.grant_unlocked_until == null || Date.parse(u.grant_unlocked_until) > now);
+  const subActive = ['active', 'trialing', 'past_due'].includes(u.sub_status);
+  if (subActive) return { t: 'Pro', c: 'ok' };
+  if (grantActive) return { t: u.grant_unlocked_until ? 'Unlocked' : 'Unlocked (life)', c: 'ok' };
+  const trialEnds = u.created_at ? Date.parse(u.created_at) + 30 * 86400000 : 0;
+  if (now < trialEnds) return { t: 'Trial (' + Math.ceil((trialEnds - now) / 86400000) + 'd)', c: '' };
+  return { t: 'Expired', c: 'bad' };
+}
+
+async function loadAdmin() {
+  if (!isAdmin()) return;
+  adminMsg('Loading…', '');
+  const [usersR, couponsR, trialR] = await Promise.all([
+    cc('adminListUsers', 200, 0), cc('adminListCoupons', 500), cc('adminTrialEnding', 5),
+  ]);
+  if (usersR.ok) renderAdminUsers(usersR.data || []);
+  if (couponsR.ok) renderAdminCoupons(couponsR.data || []);
+  if (trialR.ok) renderTrialEnding(trialR.data || []);
+  adminMsg(usersR.ok ? '' : (usersR.error || 'Failed to load (are you an admin?)'), usersR.ok ? '' : 'bad');
+}
+
+function renderAdminUsers(users) {
+  const rows = users.map((u) => {
+    const st = userStateLabel(u);
+    return '<tr>' +
+      '<td>' + esc(u.email || u.id) + (u.is_admin ? ' <span class="chip on">admin</span>' : '') + '</td>' +
+      '<td><span class="pill ' + st.c + '">' + st.t + '</span></td>' +
+      '<td>' + fmtDate(u.created_at) + '</td>' +
+      '<td class="row-actions" style="text-align:right">' +
+      '<button data-grant="' + u.id + '">Grant</button>' +
+      '<button data-grant30="' + u.id + '">+30d</button>' +
+      '<button class="danger" data-revoke="' + u.id + '">Revoke</button></td></tr>';
+  }).join('');
+  $('admin-users').innerHTML = rows || '<tr><td colspan="4" class="empty">No users.</td></tr>';
+  $('admin-user-count').textContent = users.length + ' user' + (users.length === 1 ? '' : 's');
+  const bind = (attr, fn) => $('admin-users').querySelectorAll('[' + attr + ']').forEach((b) =>
+    b.addEventListener('click', () => fn(b.getAttribute(attr))));
+  bind('data-grant', (id) => grantUser(id, null));   // lifetime comp
+  bind('data-grant30', (id) => grantUser(id, 30));   // 30 days
+  bind('data-revoke', (id) => revokeUser(id));
+}
+
+function renderAdminCoupons(coupons) {
+  const rows = coupons.map((c) => {
+    const cap = c.max_redemptions == null ? '∞' : c.max_redemptions;
+    const grant = c.kind === 'lifetime' ? 'lifetime' : (c.days + 'd');
+    return '<tr><td><code>' + esc(c.code) + '</code></td><td>' + grant + '</td>' +
+      '<td>' + c.times_redeemed + ' / ' + cap + '</td>' +
+      '<td>' + (c.expires_at ? fmtDate(c.expires_at) : 'no expiry') + '</td>' +
+      '<td>' + esc(c.batch || '') + '</td></tr>';
+  }).join('');
+  $('admin-coupons').innerHTML = rows || '<tr><td colspan="5" class="empty">No codes yet.</td></tr>';
+}
+
+function renderTrialEnding(list) {
+  $('admin-trial-ending').innerHTML = list.length
+    ? list.map((u) => '<div class="list-row"><div class="who"><strong>' + esc(u.email || u.id) +
+        '</strong><span class="uname">trial ends ' + fmtDate(u.trial_ends_at) + '</span></div></div>').join('')
+    : '<div class="empty" style="padding:12px">No trials ending in the next 5 days.</div>';
+}
+
+async function createCoupon() {
+  const kind = $('cp-kind').value;
+  const days = kind === 'days' ? parseInt($('cp-days').value, 10) || 0 : null;
+  const max = $('cp-max').value ? parseInt($('cp-max').value, 10) : null;
+  const code = $('cp-code').value.trim() || null;
+  const res = await cc('adminCreateCoupon', { code, kind, days, maxRedemptions: max });
+  if (!res.ok || (res.data && res.data.ok === false)) { adminCouponMsg((res.data && res.data.error) || res.error || 'Failed.', 'bad'); return; }
+  adminCouponMsg('Created code: ' + res.data.code, 'ok');
+  $('cp-code').value = '';
+  loadAdmin();
+}
+
+async function bulkCoupons() {
+  const kind = $('cp-kind').value;
+  const days = kind === 'days' ? parseInt($('cp-days').value, 10) || 0 : null;
+  const count = parseInt($('cp-bulk-count').value, 10) || 0;
+  const prefix = $('cp-prefix').value.trim();
+  if (count < 1) { adminCouponMsg('Enter how many codes to generate.', 'bad'); return; }
+  const res = await cc('adminCreateCouponsBulk', { count, prefix, kind, days, maxRedemptions: 1 });
+  if (!res.ok || (res.data && res.data.ok === false)) { adminCouponMsg((res.data && res.data.error) || res.error || 'Failed.', 'bad'); return; }
+  const codes = (res.data && res.data.codes) || [];
+  adminCouponMsg('Generated ' + codes.length + ' codes (batch "' + (res.data.batch || 'bulk') + '").', 'ok');
+  $('admin-bulk-output').style.display = 'block';
+  $('admin-bulk-output').value = codes.join('\n');
+  loadAdmin();
+}
+
+async function grantUser(id, days) {
+  const res = await cc('adminGrantUser', id, days, null);
+  if (!res.ok || (res.data && res.data.ok === false)) { adminMsg((res.data && res.data.error) || res.error || 'Failed.', 'bad'); return; }
+  adminMsg(days ? 'Granted ' + days + ' days.' : 'Granted lifetime Pro.', 'ok');
+  loadAdmin();
+}
+
+async function revokeUser(id) {
+  const res = await cc('adminRevokeUser', id);
+  if (!res.ok || (res.data && res.data.ok === false)) { adminMsg((res.data && res.data.error) || res.error || 'Failed.', 'bad'); return; }
+  adminMsg('Revoked coupon/comp access (Stripe subs are unaffected).', 'ok');
+  loadAdmin();
+}
+
+function adminMsg(m, k) { pill('admin-status', m, k); }
+function adminCouponMsg(m, k) { pill('admin-coupon-status', m, k); }
+
 // ---- wire up --------------------------------------------------------------
 $('btn-add').addEventListener('click', () => openEditor(-1));
+$('btn-upgrade-top').addEventListener('click', () => { goToAccountTab(); startUpgrade(); });
+$('btn-upgrade').addEventListener('click', startUpgrade);
+$('btn-manage-billing').addEventListener('click', manageBilling);
+$('btn-redeem').addEventListener('click', doRedeem);
+$('btn-create-coupon').addEventListener('click', createCoupon);
+$('btn-bulk-coupon').addEventListener('click', bulkCoupons);
+$('btn-refresh-admin').addEventListener('click', loadAdmin);
 $('btn-cancel').addEventListener('click', closeEditor);
 $('btn-save-snippet').addEventListener('click', saveSnippet);
 $('btn-save-settings').addEventListener('click', saveSettings);
@@ -722,5 +1011,12 @@ $('set-autopublish').addEventListener('change', setAutoPublish);
 
 window.api.onState((s) => { state = s; render(); });
 window.api.cloud.onChange(() => refreshCloud());
+
+// Returning to the app (e.g. after paying in the browser) — re-check Pro status
+// so the plan flips to Pro without a manual refresh.
+window.addEventListener('focus', () => {
+  if (cloud.status && cloud.status.signedIn) cc('refreshEntitlement');
+});
+
 refresh();
 refreshCloud();

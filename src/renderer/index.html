@@ -144,10 +144,12 @@
   <div class="tab" data-view="team">Team Library</div>
   <div class="tab" data-view="friends">Friends &amp; Sharing</div>
   <div class="tab" data-view="settings">Settings</div>
+  <div class="tab" data-view="admin" style="display:none">Admin</div>
 </div>
 
 <main>
   <div id="engine-banner"></div>
+  <div id="plan-banner" style="display:none"></div>
 
   <!-- SNIPPETS -->
   <section id="view-snippets" class="view active">
@@ -158,6 +160,8 @@
       <input type="file" id="import-input" accept=".csv,text/csv" style="display:none" />
       <span id="import-status" class="pill" style="display:none"></span>
       <span class="spacer"></span>
+      <button class="primary" id="btn-upgrade-top" style="display:none">✨ Upgrade to Pro</button>
+      <span id="pill-plan" class="pill" style="display:none"></span>
       <span id="count" class="pill"></span>
     </div>
     <table>
@@ -241,6 +245,24 @@
           <div class="grow"></div>
           <button id="btn-signout">Sign out</button>
         </div>
+      </div>
+
+      <div class="card" id="billing-card">
+        <div class="list-row" style="margin:0;border:none;background:transparent;padding:0">
+          <div class="who">
+            <strong>Plan: <span id="billing-plan">Free trial</span></strong>
+            <span class="uname" id="billing-sub">30-day free trial</span>
+          </div>
+          <div class="grow"></div>
+          <button class="primary" id="btn-upgrade">✨ Upgrade to Pro</button>
+          <button id="btn-manage-billing" style="display:none">Manage subscription</button>
+        </div>
+        <span id="billing-status" class="pill" style="display:none;margin-top:10px"></span>
+        <div class="inline-form" style="margin-top:12px">
+          <input type="text" id="redeem-code" placeholder="Have a code? Enter it here" autocomplete="off" />
+          <button id="btn-redeem">Redeem</button>
+        </div>
+        <span id="redeem-status" class="pill" style="display:none;margin-top:8px"></span>
       </div>
 
       <div class="card">
@@ -336,6 +358,61 @@
         <button id="btn-publish">Publish my snippets</button>
         <span id="publish-status" class="pill"></span>
       </div>
+    </div>
+  </section>
+
+  <!-- ADMIN (only shown to admins) -->
+  <section id="view-admin" class="view">
+    <div class="toolbar">
+      <strong style="font-size:15px">Admin</strong>
+      <span class="spacer"></span>
+      <span id="admin-user-count" class="pill"></span>
+      <button id="btn-refresh-admin">Refresh</button>
+    </div>
+    <span id="admin-status" class="pill" style="display:none;margin-bottom:10px"></span>
+
+    <div class="card">
+      <h3>Generate a coupon</h3>
+      <p class="sub">Codes unlock Pro with no card. Set what each code grants.</p>
+      <div class="inline-form" style="flex-wrap:wrap;gap:10px">
+        <select id="cp-kind">
+          <option value="lifetime">Lifetime</option>
+          <option value="days">Fixed days</option>
+        </select>
+        <input type="number" id="cp-days" placeholder="days" style="width:90px" min="1" />
+        <input type="number" id="cp-max" placeholder="max uses (blank = ∞)" style="width:170px" min="1" />
+        <input type="text" id="cp-code" placeholder="custom code (blank = auto)" />
+        <button class="primary" id="btn-create-coupon">Create code</button>
+      </div>
+      <div class="inline-form" style="margin-top:10px;gap:10px">
+        <input type="number" id="cp-bulk-count" placeholder="how many" style="width:110px" min="1" max="500" />
+        <input type="text" id="cp-prefix" placeholder="prefix (e.g. LAUNCH)" style="width:170px" />
+        <button id="btn-bulk-coupon">Bulk generate</button>
+      </div>
+      <span id="admin-coupon-status" class="pill" style="display:none;margin-top:10px"></span>
+      <textarea id="admin-bulk-output" readonly style="display:none;width:100%;margin-top:10px;height:90px"></textarea>
+    </div>
+
+    <div class="card">
+      <h3>Coupons</h3>
+      <table>
+        <thead><tr><th>Code</th><th>Grants</th><th>Used</th><th>Expires</th><th>Batch</th></tr></thead>
+        <tbody id="admin-coupons"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Trials ending soon</h3>
+      <div id="admin-trial-ending"></div>
+    </div>
+
+    <div class="card">
+      <h3>Users</h3>
+      <p class="sub">Grant a lifetime comp, +30 days, or revoke coupon/comp access.</p>
+      <table>
+        <thead><tr><th>Email</th><th>Status</th><th>Joined</th><th></th></tr></thead>
+        <tbody id="admin-users"></tbody>
+      </table>
     </div>
   </section>
 </main>
