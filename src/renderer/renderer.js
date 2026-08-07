@@ -103,6 +103,7 @@ function renderSettings() {
   $('set-teamwins').value = String(!!s.teamWins);
   $('set-enabled').checked = s.enabled !== false;
   $('set-launch').checked = !!s.launchAtLogin;
+  $('set-suggest').checked = s.showSuggestions !== false;
 }
 
 // ---- snippet editor -------------------------------------------------------
@@ -203,6 +204,7 @@ async function saveSettings() {
     teamWins: $('set-teamwins').value === 'true',
     enabled: $('set-enabled').checked,
     launchAtLogin: $('set-launch').checked,
+    showSuggestions: $('set-suggest').checked,
   });
   refresh();
 }

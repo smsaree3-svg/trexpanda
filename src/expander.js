@@ -99,6 +99,38 @@ class Expander {
   }
 
   /**
+   * Live autocomplete: given what the user is currently typing, return the
+   * snippets whose trigger STARTS WITH the current token (the run of non-space
+   * characters at the end of the buffer). Pure and dependency-free so it can be
+   * unit-tested; the UI layer decides when/where to show the results.
+   *
+   * @param {number} [limit=6] max items to return
+   * @returns {{token:string, items:Array<{trigger, preview, hasAttachment, isHtml}>}}
+   */
+  suggestions(limit = 6) {
+    const m = this.buffer.match(/(\S+)$/);
+    const token = m ? m[1] : '';
+    if (!token) return { token: '', items: [] };
+
+    const items = [];
+    for (const [trigger, snippet] of this.map) {
+      if (trigger.length >= token.length && trigger.startsWith(token)) {
+        const raw = String(snippet.replacement || '');
+        items.push({
+          trigger,
+          // One-line, whitespace-collapsed preview of what the snippet inserts.
+          preview: raw.replace(/\s+/g, ' ').trim().slice(0, 140),
+          hasAttachment: !!snippet.attachment,
+          isHtml: !!snippet.html,
+        });
+      }
+    }
+    // Shortest (closest) trigger first, then alphabetical — feels predictable.
+    items.sort((a, b) => a.trigger.length - b.trigger.length || a.trigger.localeCompare(b.trigger));
+    return { token, items: items.slice(0, Math.max(1, limit)) };
+  }
+
+  /**
    * Expand dynamic tokens and locate the optional caret marker "$|".
    * Supported: {date} {time} {datetime} and any custom via opts.dynamicResolver.
    * "$|" marks where the caret should land after insertion (it is removed).

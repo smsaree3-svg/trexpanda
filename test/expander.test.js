@@ -92,4 +92,58 @@ test('setSnippets updates live without losing the instance', () => {
   assert.strictEqual(a.replacement, '2');
 });
 
+// ---- live suggestions -----------------------------------------------------
+
+test('suggestions: prefix match with previews', () => {
+  const eng = new Expander([
+    { trigger: ';addr', replacement: '123 Market St\nSan Francisco' },
+    { trigger: ';addr2', replacement: 'PO Box 9' },
+    { trigger: ';email', replacement: 'me@example.com' },
+  ]);
+  // type the partial token ";ad" (no expansion yet)
+  assert.strictEqual(typeString(eng, ';ad'), null);
+  const s = eng.suggestions();
+  assert.strictEqual(s.token, ';ad');
+  assert.deepStrictEqual(s.items.map((i) => i.trigger), [';addr', ';addr2']);
+  // preview is one-line, whitespace-collapsed
+  assert.strictEqual(s.items[0].preview, '123 Market St San Francisco');
+});
+
+test('suggestions: only the current word (after a space) is matched', () => {
+  const eng = new Expander([{ trigger: ';addr', replacement: 'X' }]);
+  typeString(eng, 'hi ;ad');
+  assert.deepStrictEqual(eng.suggestions().items.map((i) => i.trigger), [';addr']);
+  // a trailing space clears the current token
+  eng.onChar(' ');
+  assert.deepStrictEqual(eng.suggestions(), { token: '', items: [] });
+});
+
+test('suggestions: empty when nothing matches or buffer is empty', () => {
+  const eng = new Expander([{ trigger: ';addr', replacement: 'X' }]);
+  assert.deepStrictEqual(eng.suggestions().items, []);
+  typeString(eng, ';zzz');
+  assert.deepStrictEqual(eng.suggestions().items, []);
+});
+
+test('suggestions: flags attachment and rich-text snippets', () => {
+  const eng = new Expander([
+    { trigger: ';pic', replacement: '', attachment: { type: 'image', data: 'x' } },
+    { trigger: ';rich', replacement: 'hi', html: '<b>hi</b>' },
+  ]);
+  typeString(eng, ';');
+  const items = eng.suggestions().items;
+  const pic = items.find((i) => i.trigger === ';pic');
+  const rich = items.find((i) => i.trigger === ';rich');
+  assert.strictEqual(pic.hasAttachment, true);
+  assert.strictEqual(rich.isHtml, true);
+});
+
+test('suggestions: respects the limit', () => {
+  const eng = new Expander(
+    Array.from({ length: 10 }, (_, i) => ({ trigger: ';x' + i, replacement: String(i) }))
+  );
+  typeString(eng, ';x');
+  assert.strictEqual(eng.suggestions(3).items.length, 3);
+});
+
 console.log('\nexpander: ' + passed + ' passed');

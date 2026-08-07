@@ -16,6 +16,9 @@ the bottom.
 - **Text expansion** — global, works in any app. Triggers expand via a fast
   backspace-then-paste technique (reliable across apps and keyboard layouts).
 - **Snippet manager** — add / edit / delete your personal snippets in a clean UI.
+- **Live suggestions** — as you start typing a trigger, a small popup lists the
+  matching snippets and a preview of what each one inserts. Click to insert, or
+  just keep typing. Toggle it in Settings → Behaviour.
 - **Dynamic tokens** — `{date}`, `{time}`, `{datetime}`, and `$|` to place the
   cursor after expansion.
 - **Team library sync** — point everyone at one shared source (a URL or a synced

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<style>
+  /* Fixed metrics — must match positionSuggest() in main.js:
+     header 32px, each row 50px, card vertical padding 10px. */
+  :root {
+    --bg: #171d2b; --bg2: #1e2637; --line: #2a3346; --text: #e6ebf5;
+    --muted: #8a94a8; --accent: #5b8cff; --accent2: #3ad29f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; overflow: hidden;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-user-select: none; user-select: none; }
+  .card {
+    height: 100vh; width: 100vw; display: flex; flex-direction: column;
+    background: rgba(23, 29, 43, 0.98); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 12px 34px rgba(0,0,0,.45);
+  }
+  .head {
+    height: 32px; flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--muted);
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  }
+  .head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent2); flex: none; }
+  .head .tok { color: var(--text); text-transform: none; letter-spacing: 0;
+    font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .head .spacer { flex: 1; }
+  .head .count { color: var(--muted); }
+  .list { flex: 1; overflow: hidden; }
+  .row {
+    height: 50px; display: flex; flex-direction: column; justify-content: center;
+    gap: 2px; padding: 0 12px; cursor: pointer; border-bottom: 1px solid rgba(42,51,70,.5);
+  }
+  .row:last-child { border-bottom: none; }
+  .row:hover, .row.active { background: var(--bg2); }
+  .row .top { display: flex; align-items: center; gap: 8px; }
+  .row .trigger {
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
+    color: var(--accent); background: rgba(91,140,255,.10);
+    padding: 1px 7px; border-radius: 6px; white-space: nowrap; }
+  .row .trigger b { color: #cfe0ff; font-weight: 700; }
+  .row .tag { font-size: 10px; color: var(--muted); border: 1px solid var(--line);
+    padding: 0 6px; border-radius: 999px; }
+  .row .preview {
+    color: var(--muted); font-size: 12px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .row .preview.empty { font-style: italic; opacity: .8; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <span class="dot"></span>
+    <span>Snippets</span>
+    <span class="tok" id="tok"></span>
+    <span class="spacer"></span>
+    <span class="count" id="count"></span>
+  </div>
+  <div class="list" id="list"></div>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  function render(data) {
+    const token = data.token || '';
+    const items = data.items || [];
+    $('tok').textContent = token;
+    $('count').textContent = items.length + (items.length === 1 ? ' match' : ' matches');
+    const list = $('list');
+    list.innerHTML = '';
+    items.forEach((it, i) => {
+      const row = document.createElement('div');
+      row.className = 'row' + (i === 0 ? ' active' : '');
+      // Bold the part of the trigger the user has already typed.
+      const t = esc(it.trigger);
+      const p = esc(token);
+      const boldTrigger = (it.trigger.startsWith(token) && token)
+        ? '<b>' + p + '</b>' + t.slice(p.length)
+        : t;
+      let tag = '';
+      if (it.hasAttachment) tag = '<span class="tag">📎 attachment</span>';
+      else if (it.isHtml) tag = '<span class="tag">rich text</span>';
+      const preview = it.preview
+        ? '<div class="preview">' + esc(it.preview) + '</div>'
+        : '<div class="preview empty">' + (it.hasAttachment ? 'attachment only' : (it.isHtml ? 'formatted snippet' : 'empty snippet')) + '</div>';
+      row.innerHTML =
+        '<div class="top"><span class="trigger">' + boldTrigger + '</span>' + tag + '</div>' +
+        preview;
+      row.addEventListener('mousedown', (e) => {
+        // mousedown (not click) so the pick fires before any focus juggling.
+        e.preventDefault();
+        window.suggest.pick(it.trigger);
+      });
+      list.appendChild(row);
+    });
+  }
+
+  window.suggest.onData(render);
+</script>
+</body>
+</html>
