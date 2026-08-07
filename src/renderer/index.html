@@ -117,6 +117,9 @@
   .or-divider { display: flex; align-items: center; gap: 10px; color: var(--muted);
     font-size: 12px; margin: 16px 0 6px; }
   .or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  footer.app-footer { padding: 11px 22px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 12px; text-align: center; background: var(--panel); }
+  footer.app-footer b { color: var(--text); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -336,6 +339,8 @@
     </div>
   </section>
 </main>
+
+<footer class="app-footer">Powered by <b>Lumisha&nbsp;LLC</b></footer>
 
 <!-- EDITOR MODAL -->
 <div class="modal-bg" id="modal">
