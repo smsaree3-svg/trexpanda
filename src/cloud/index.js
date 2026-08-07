@@ -74,6 +74,129 @@ class CloudService {
     };
   }
 
+  // -- billing / subscription ------------------------------------------------
+
+  /**
+   * Read the caller's RAW entitlement snapshot: account creation time (the
+   * trial anchor), Stripe subscription status, any coupon/comp grant, and admin
+   * flag. The caller (main process) turns this into an access descriptor via
+   * src/entitlements.js computeAccess() using the current time — the trial is
+   * time-based, so the derived result must be recomputed with a fresh clock,
+   * not cached. All three rows are readable only for the caller (RLS).
+   */
+  async getEntitlement() {
+    const client = this._requireClient();
+    const { data: { user } } = await client.auth.getUser();
+    if (!user) throw new Error('Not signed in.');
+    const me = user.id;
+
+    const [subRes, grantRes, adminRes] = await Promise.all([
+      client.from('subscriptions').select('status, current_period_end, cancel_at_period_end').eq('user_id', me).maybeSingle(),
+      client.from('grants').select('unlocked_until, source').eq('user_id', me).maybeSingle(),
+      client.from('admins').select('user_id').eq('user_id', me).maybeSingle(),
+    ]);
+    const sub = subRes.data || null;
+    const grant = grantRes.data || null;
+
+    return {
+      signedIn: true,
+      createdAt: user.created_at || null,
+      subStatus: sub ? sub.status : null,
+      currentPeriodEnd: (sub && sub.current_period_end) || null,
+      cancelAtPeriodEnd: !!(sub && sub.cancel_at_period_end),
+      hasGrant: !!grant,
+      grantUnlockedUntil: grant ? grant.unlocked_until : null,
+      grantSource: grant ? grant.source : null,
+      isAdmin: !!adminRes.data,
+    };
+  }
+
+  /** Redeem a coupon code (server validates + records + grants). */
+  async redeemCoupon(code) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('redeem_coupon', { p_code: String(code || '') });
+    if (error) throw new Error(error.message || 'Could not redeem code.');
+    return data; // { ok, ... } | { ok:false, error }
+  }
+
+  // -- admin (all server-enforced; non-admins get "Not authorized") ----------
+
+  async adminListUsers(limit = 200, offset = 0) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('admin_list_users', { p_limit: limit, p_offset: offset });
+    if (error) throw new Error(error.message || 'Failed to list users.');
+    return data || [];
+  }
+
+  async adminListCoupons(limit = 500) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('admin_list_coupons', { p_limit: limit });
+    if (error) throw new Error(error.message || 'Failed to list coupons.');
+    return data || [];
+  }
+
+  async adminTrialEnding(days = 5) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('admin_trial_ending', { p_days: days });
+    if (error) throw new Error(error.message || 'Failed to load trial list.');
+    return data || [];
+  }
+
+  async adminCreateCoupon({ code = null, kind = 'lifetime', days = null, maxRedemptions = null, expiresAt = null, batch = null } = {}) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('admin_create_coupon', {
+      p_code: code, p_kind: kind, p_days: days,
+      p_max_redemptions: maxRedemptions, p_expires_at: expiresAt, p_batch: batch,
+    });
+    if (error) throw new Error(error.message || 'Failed to create coupon.');
+    return data;
+  }
+
+  async adminCreateCouponsBulk({ count, prefix = '', kind = 'lifetime', days = null, maxRedemptions = 1, expiresAt = null, batch = null } = {}) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('admin_create_coupons_bulk', {
+      p_count: count, p_prefix: prefix, p_kind: kind, p_days: days,
+      p_max_redemptions: maxRedemptions, p_expires_at: expiresAt, p_batch: batch,
+    });
+    if (error) throw new Error(error.message || 'Failed to create coupons.');
+    return data;
+  }
+
+  async adminGrantUser(userId, days = null, note = null) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('admin_grant_user', { p_user: userId, p_days: days, p_note: note });
+    if (error) throw new Error(error.message || 'Failed to grant access.');
+    return data;
+  }
+
+  async adminRevokeUser(userId) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('admin_revoke_user', { p_user: userId });
+    if (error) throw new Error(error.message || 'Failed to revoke access.');
+    return data;
+  }
+
+  /**
+   * Ask the create-checkout-session Edge Function for a Stripe Checkout URL.
+   * The main process opens the returned URL in the user's browser.
+   */
+  async startCheckout() {
+    const client = this._requireClient();
+    const { data, error } = await client.functions.invoke('create-checkout-session', { body: {} });
+    if (error) throw new Error(error.message || 'Could not start checkout.');
+    if (!data || !data.url) throw new Error((data && data.error) || 'No checkout URL returned.');
+    return data; // { url }
+  }
+
+  /** Ask the create-portal-session Edge Function for a Stripe Billing Portal URL. */
+  async openBillingPortal() {
+    const client = this._requireClient();
+    const { data, error } = await client.functions.invoke('create-portal-session', { body: {} });
+    if (error) throw new Error(error.message || 'Could not open the billing portal.');
+    if (!data || !data.url) throw new Error((data && data.error) || 'No portal URL returned.');
+    return data; // { url }
+  }
+
   // -- auth ------------------------------------------------------------------
 
   _requireClient() {
