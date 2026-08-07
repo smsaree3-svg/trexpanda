@@ -135,6 +135,18 @@ class Store {
     this.backend.set('cloudSnippets', list);
   }
 
+  // Last-known RAW entitlement snapshot (account createdAt, subscription status,
+  // grant, admin flag) from CloudService.getEntitlement(). We cache the RAW
+  // inputs — never the derived access result — because the trial is time-based
+  // and must be recomputed against the current clock (so a trial can lapse while
+  // the app is offline). Lets a paying user keep access offline too.
+  getPlanRaw() {
+    return this.backend.get('planRaw', null);
+  }
+  setPlanRaw(raw) {
+    this.backend.set('planRaw', raw || null);
+  }
+
   getSettings() {
     return this.backend.get('settings', {
       teamSource: '', // URL or folder path to the shared library

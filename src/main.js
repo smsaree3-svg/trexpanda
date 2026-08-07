@@ -12,6 +12,7 @@ const { charFor, K } = require('./keymap');
 const inject = require('./inject');
 const { fetchTeamLibrary, writeTeamLibrary } = require('./sync');
 const { CloudService } = require('./cloud');
+const entitlements = require('./entitlements');
 
 // electron-store and uiohook are loaded lazily/defensively so a build issue in
 // one native module doesn't take down the whole app.
@@ -25,6 +26,7 @@ let store, expander, tray, win;
 let suggestWin = null; // live autocomplete popup
 let cloud = null;
 let storeBackend = null;
+let planRaw = null; // last-known RAW entitlement snapshot (see currentPlan)
 let hookRunning = false;
 let syncTimer = null;
 let cloudSyncTimer = null;
@@ -63,6 +65,48 @@ function rebuildEngine() {
   const snippets = store.effectiveSnippets();
   if (!expander) expander = new Expander(snippets);
   else expander.setSnippets(snippets);
+}
+
+// ---------------------------------------------------------------------------
+// Plan / entitlement (Free vs Pro)
+// ---------------------------------------------------------------------------
+
+/**
+ * The current access descriptor, computed fresh against the clock from the
+ * last-known RAW snapshot (trial is time-based, so it must be recomputed rather
+ * than cached). Signed-out / unknown until the first cloud resolve.
+ */
+function currentPlan() {
+  const raw = planRaw || store.getPlanRaw();
+  if (!raw) return entitlements.unknown();
+  return entitlements.computeAccess({ ...raw, now: Date.now() });
+}
+
+/**
+ * Refresh the RAW entitlement snapshot from the cloud and cache it. On an
+ * offline/cloud hiccup, keeps the last-known snapshot (still recomputed with the
+ * current clock, so a paid user keeps access and a trial can still lapse).
+ */
+async function resolveEntitlement() {
+  try {
+    if (cloud && cloud.configured()) {
+      const st = await cloud.status();
+      if (st && st.signedIn) {
+        planRaw = await cloud.getEntitlement();
+        store.setPlanRaw(planRaw);
+        pushState();
+        return currentPlan();
+      }
+    }
+    // Cloud off or signed out — nothing is unlocked.
+    planRaw = { signedIn: false };
+    store.setPlanRaw(planRaw);
+  } catch (_) {
+    const cached = store.getPlanRaw();
+    if (cached) planRaw = cached; // keep last-known; recomputed with current time
+  }
+  pushState();
+  return currentPlan();
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +149,9 @@ function onKeyUp(e) {
 async function onKeyDown(e) {
   const settings = store.getSettings();
   if (!settings.enabled) return;
+  // Expansion is gated on access: it works during the trial and while paid, but
+  // stops once the trial has expired with no subscription/coupon (or signed out).
+  if (!currentPlan().hasAccess) return;
 
   if (SHIFT_CODES.has(e.keycode)) { shiftDown = true; return; }
 
@@ -474,6 +521,7 @@ function pushState() {
     team: store.getTeamCache(),
     settings: store.getSettings(),
     stats,
+    plan: currentPlan(),
     engine: {
       injectionAvailable: inject.available(),
       injectionError: inject.getLoadError(),
@@ -493,6 +541,7 @@ function registerIpc() {
     team: store.getTeamCache(),
     settings: store.getSettings(),
     stats,
+    plan: currentPlan(),
     engine: {
       injectionAvailable: inject.available(),
       injectionError: inject.getLoadError(),
@@ -502,7 +551,16 @@ function registerIpc() {
   }));
 
   ipcMain.handle('save-personal', (_e, list) => {
-    store.setPersonal(Array.isArray(list) ? list : []);
+    const next = Array.isArray(list) ? list : [];
+    const plan = currentPlan();
+    const prevLen = store.getPersonal().length;
+    // Block ADDING new snippets when the user has no access (signed out, or the
+    // trial has expired with no subscription/coupon). Editing and deleting what
+    // they already have stays allowed so nobody is locked out of their own data.
+    if (next.length > prevLen && !plan.canAdd) {
+      return { ok: false, error: 'locked', state: plan.state };
+    }
+    store.setPersonal(next);
     rebuildEngine();
     pushState();
     return { ok: true };
@@ -523,6 +581,7 @@ function registerIpc() {
   ipcMain.handle('sync-now', async () => {
     const res = await syncNow();
     await syncCloud();
+    await resolveEntitlement(); // pick up plan changes on sign-in/out/sync
     return res;
   });
 
@@ -542,6 +601,23 @@ function registerIpc() {
     syncCloud: () => syncCloud(),
     // Publish the user's current personal snippets to their cloud library.
     publishPersonal: () => cloud.publishSnippets(store.getPersonal()),
+
+    // -- billing -----------------------------------------------------------
+    // Re-check Pro status from the cloud and update the cached plan.
+    refreshEntitlement: () => resolveEntitlement(),
+    // Start Stripe Checkout: get the URL from the Edge Function and open it in
+    // the user's default browser (payment must happen outside the app).
+    startCheckout: async () => {
+      const { url } = await cloud.startCheckout();
+      if (url) shell.openExternal(url);
+      return { url, opened: !!url };
+    },
+    // Open the Stripe Customer Portal (manage/cancel) in the browser.
+    openBillingPortal: async () => {
+      const { url } = await cloud.openBillingPortal();
+      if (url) shell.openExternal(url);
+      return { url, opened: !!url };
+    },
   };
 
   ipcMain.handle('cloud', async (_e, payload) => {
@@ -600,6 +676,7 @@ if (!gotLock) {
 
     if (store.getSettings().enabled) startHook();
     scheduleSync();
+    resolveEntitlement().catch(() => {}); // resolve Free/Pro in the background
 
     // Auto-update (no-op until you configure a publish target + code signing).
     try {
