@@ -258,4 +258,4 @@ to build it out next.
 
 ## License
 
-MIT — see `LICENSE`.
+Proprietary. See `LICENSE`. Free to use during the beta period; paid licensing is planned for current and future versions.
