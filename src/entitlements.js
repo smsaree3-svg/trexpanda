@@ -29,7 +29,17 @@
 /** Length of the free trial, in days. Change this one constant to retune it. */
 const TRIAL_DAYS = 30;
 
-/** Stripe subscription statuses that count as paid/active. */
+/**
+ * Stripe subscription statuses that count as paid/active.
+ *
+ * `past_due` is intentional grace: when a renewal payment fails, Stripe keeps
+ * retrying (Smart Retries can run for up to a couple of weeks) before it moves
+ * the subscription to `canceled`/`unpaid`. We keep the user on Pro during that
+ * window rather than cutting them off on the first failed charge. `trialing`
+ * covers any future Stripe-side trial; we currently run our own no-card trial
+ * (anchored to account creation), so no live subscription reaches here as
+ * `trialing` today.
+ */
 const ACTIVE_STATUSES = ['active', 'trialing', 'past_due'];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
