@@ -527,6 +527,7 @@ function pushState() {
       injectionError: inject.getLoadError(),
       hookAvailable: !!uIOhook,
       hookError: uiohookError ? String(uiohookError.message || uiohookError) : null,
+      cloudConfigured: !!(cloud && cloud.configured()),
     },
   });
 }
@@ -547,6 +548,7 @@ function registerIpc() {
       injectionError: inject.getLoadError(),
       hookAvailable: !!uIOhook,
       hookError: uiohookError ? String(uiohookError.message || uiohookError) : null,
+      cloudConfigured: !!(cloud && cloud.configured()),
     },
   }));
 
@@ -668,6 +670,13 @@ if (!gotLock) {
   app.whenReady().then(() => {
     initStore();
     try { cloud = new CloudService(storeBackend); } catch (err) { console.error('Cloud init failed:', err); cloud = null; }
+    if (!cloud || !cloud.configured()) {
+      // Expansion, sign-in, and the trial all require the cloud config. If a
+      // build ships without it, fail loudly in the log (and via a renderer
+      // banner) instead of silently doing nothing.
+      console.error('Trexpanda: cloud is NOT configured, so sign-in, trial, and expansion are unavailable.',
+        cloud ? cloud.unavailableReason() : 'CloudService failed to construct.');
+    }
     rebuildEngine();
     registerIpc();
     buildTray();
