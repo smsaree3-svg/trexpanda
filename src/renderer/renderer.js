@@ -203,9 +203,12 @@ function renderSnippets() {
   const rows = $('snip-rows');
   rows.innerHTML = '';
   const list = state.personal || [];
-  $('snip-empty').style.display = list.length ? 'none' : 'block';
-  $('count').textContent = list.length + ' snippet' + (list.length === 1 ? '' : 's');
+  const q = (($('snip-search') && $('snip-search').value) || '').trim().toLowerCase();
+  const matchQ = (s) => !q || ((s.trigger || '').toLowerCase().includes(q) || (s.replacement || '').toLowerCase().includes(q) || (s.label || '').toLowerCase().includes(q));
+  let shown = 0;
   list.forEach((s, i) => {
+    if (!matchQ(s)) return;
+    shown++;
     const tr = document.createElement('tr');
     const att = s.attachment ? ' <span title="' + esc(s.attachment.name) + '">📎 ' + esc(s.attachment.name) + '</span>' : '';
     const rich = s.html ? ' <span class="pill ok" title="Formatted (rich text)" style="padding:1px 7px">styled</span>' : '';
@@ -217,6 +220,11 @@ function renderSnippets() {
       '<button class="danger" data-del="' + i + '">Delete</button></td>';
     rows.appendChild(tr);
   });
+  const empty = $('snip-empty');
+  if (!list.length) { empty.style.display = 'block'; empty.textContent = 'No snippets yet. Click "New snippet" to create your first one.'; }
+  else if (shown === 0) { empty.style.display = 'block'; empty.textContent = 'No snippets match "' + q + '".'; }
+  else { empty.style.display = 'none'; }
+  $('count').textContent = q ? (shown + ' of ' + list.length + ' snippet' + (list.length === 1 ? '' : 's')) : (list.length + ' snippet' + (list.length === 1 ? '' : 's'));
   rows.querySelectorAll('[data-edit]').forEach((b) =>
     b.addEventListener('click', () => openEditor(+b.dataset.edit)));
   rows.querySelectorAll('[data-del]').forEach((b) =>
@@ -696,6 +704,7 @@ $('btn-choose-folder').addEventListener('click', choosePublishFolder);
 $('btn-publish').addEventListener('click', publish);
 $('btn-import').addEventListener('click', () => $('import-input').click());
 $('btn-export').addEventListener('click', exportCSV);
+if ($('snip-search')) $('snip-search').addEventListener('input', renderSnippets);
 $('import-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
   e.target.value = '';
