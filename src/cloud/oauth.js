@@ -13,6 +13,13 @@
  *
  * The fixed port keeps setup simple: you allowlist exactly one redirect URL
  * (http://localhost:8765/callback) in your Supabase project.
+ *
+ * CSRF: PKCE is what protects the handshake. The loopback server will exchange
+ * any `?code=` it receives, but exchangeCodeForSession() only succeeds when
+ * paired with the code_verifier that this client generated and holds locally,
+ * so a code injected by another local process can't be turned into a session.
+ * A separate `state` nonce would add belt-and-suspenders but isn't required for
+ * safety here, and Supabase manages its own state internally.
  */
 
 const http = require('http');
