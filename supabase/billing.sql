@@ -151,15 +151,15 @@ begin
     return jsonb_build_object('ok', false, 'error', 'Enter a code.');
   end if;
 
+  -- One generic message for every "can't use this code" case (not found,
+  -- inactive, expired, redemption limit reached). Distinct messages would let
+  -- anyone probe which codes exist, so we don't reveal which check failed.
   select * into v_c from public.coupons where code = v_code for update;
-  if not found or v_c.active is not true then
-    return jsonb_build_object('ok', false, 'error', 'Invalid or inactive code.');
-  end if;
-  if v_c.expires_at is not null and v_c.expires_at < now() then
-    return jsonb_build_object('ok', false, 'error', 'This code has expired.');
-  end if;
-  if v_c.max_redemptions is not null and v_c.times_redeemed >= v_c.max_redemptions then
-    return jsonb_build_object('ok', false, 'error', 'This code has reached its redemption limit.');
+  if not found
+     or v_c.active is not true
+     or (v_c.expires_at is not null and v_c.expires_at < now())
+     or (v_c.max_redemptions is not null and v_c.times_redeemed >= v_c.max_redemptions) then
+    return jsonb_build_object('ok', false, 'error', 'This code can''t be redeemed.');
   end if;
   if exists (select 1 from public.coupon_redemptions r where r.code = v_code and r.user_id = v_uid) then
     return jsonb_build_object('ok', false, 'error', 'You have already redeemed this code.');
