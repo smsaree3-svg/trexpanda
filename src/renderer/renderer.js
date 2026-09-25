@@ -284,6 +284,7 @@ function openEditor(index) {
   $('edit-enabled').checked = s.enabled !== false;
   editAttachment = s.attachment || null;
   renderAttachment();
+  editMsg('');
   $('modal').classList.add('show');
   $('edit-trigger').focus();
 }
@@ -311,8 +312,27 @@ function renderAttachment() {
   }
 }
 
+// Attachments and inline images are stored base64 in the snippet and synced to
+// the cloud/team library, so an oversized file bloats storage and can exceed
+// Supabase's row/request limits. Cap them at 1 MB.
+const MAX_ATTACH_BYTES = 1024 * 1024;
+
+function editMsg(text, kind) {
+  const el = $('edit-msg');
+  if (!el) return;
+  if (!text) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = 'block';
+  el.textContent = text;
+  el.style.color = kind === 'bad' ? 'var(--danger)' : 'var(--muted)';
+}
+
 function onAttachFile(file) {
   if (!file) return;
+  if (file.size > MAX_ATTACH_BYTES) {
+    editMsg('Attachment is too large (max 1 MB). Please use a smaller file.', 'bad');
+    return;
+  }
+  editMsg('');
   const reader = new FileReader();
   reader.onload = () => {
     const dataUrl = String(reader.result);
@@ -338,7 +358,10 @@ async function saveSnippet() {
   const snippet = {
     trigger,
     replacement: text,
-    label: trigger,
+    // Preserve any existing label (e.g. from a CSV import or team library) when
+    // editing; the editor has no label field, so defaulting to the trigger here
+    // would silently discard it. New snippets fall back to the trigger.
+    label: (editIndex >= 0 && state.personal[editIndex] && state.personal[editIndex].label) || trigger,
     enabled: $('edit-enabled').checked,
     origin: 'personal',
   };
@@ -743,6 +766,8 @@ $('rt-image-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file || !file.type.startsWith('image/')) return;
+  if (file.size > MAX_ATTACH_BYTES) { editMsg('Image is too large (max 1 MB). Please use a smaller image.', 'bad'); return; }
+  editMsg('');
   const reader = new FileReader();
   reader.onload = () => { $('edit-repl').focus(); rtRestoreSelection(); document.execCommand('insertImage', false, String(reader.result)); };
   reader.readAsDataURL(file);
