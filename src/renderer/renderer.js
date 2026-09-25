@@ -184,6 +184,7 @@ function renderStatus() {
   const problems = [];
   if (!e.hookAvailable) problems.push(`Global keyboard capture is unavailable${e.hookError ? ' (' + e.hookError + ')' : ''}. On macOS, grant Accessibility permission in System Settings → Privacy & Security → Accessibility, then reopen.`);
   if (!e.injectionAvailable) problems.push(`Keystroke injection is unavailable${e.injectionError ? ' (' + e.injectionError + ')' : ''}. Snippets can be managed but won't expand until this is resolved.`);
+  if (e.cloudConfigured === false) problems.push('Cloud is not configured in this build, so sign-in, your free trial, and expansion are all unavailable. This usually means the build is missing its Supabase settings (SUPABASE_URL / SUPABASE_ANON_KEY).');
   if (problems.length) {
     banner.className = 'banner';
     banner.innerHTML = problems.map((p) => '<div>⚠️ ' + p + '</div>').join('');
