@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "description": "Trexpanda — Type Less. Do More. Cross-platform text expander with team-shared snippet libraries. Type a short trigger, get a full snippet. Teams keep a shared library everyone syncs to.",
   "author": "Lumisha LLC",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
