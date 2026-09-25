@@ -1,21 +1,17 @@
-MIT License
+Copyright (c) 2026 Amit Roda / Lumisha LLC. All rights reserved.
 
-Copyright (c) 2026 Amit Roda
+Trexpanda is proprietary software owned by Lumisha LLC. Except where a
+separate written agreement grants specific rights, no permission is granted
+to any person to use, copy, modify, merge, publish, distribute, sublicense,
+or sell copies of this software or its source code.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Trexpanda is currently free to use during its beta period. Lumisha LLC may
+introduce paid licensing for current and future versions at any time.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Versions previously distributed under the MIT License remain available under
+the MIT License for those specific released versions only; this notice governs
+the current source and all future versions.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
