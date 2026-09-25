@@ -14,17 +14,49 @@
  * only used inside the running app.
  */
 
+/**
+ * Strip active content and remote resource loads from HTML that arrives from an
+ * UNTRUSTED source (a team/cloud library shared by another user). This runs in
+ * the Node main process, which has no DOMParser, so it is a conservative
+ * regex pass rather than a full parser. Personal snippets created on this
+ * machine are already sanitized in the renderer (see sanitizeHtml there) and
+ * are left untouched.
+ *
+ * It removes script/style/iframe-style elements, inline event handlers, style
+ * attributes, javascript:/vbscript: URLs, and remote (http/https/protocol-
+ * relative) resource loads so a shared snippet can't run code, phone home, or
+ * carry a tracking beacon into the user's clipboard/paste target. Self-
+ * contained data: images are kept.
+ */
+function sanitizeUntrustedHtml(html) {
+  let s = String(html);
+  // Whole dangerous elements, with their contents.
+  s = s.replace(/<\s*(script|style|iframe|object|embed|link|meta|base|form)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
+  // Self-closing or unclosed forms of the same tags.
+  s = s.replace(/<\s*(script|style|iframe|object|embed|link|meta|base|form)\b[^>]*\/?>/gi, '');
+  // Inline event handlers: on...="..." | on...='...' | on...=value
+  s = s.replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  // Inline styles (can carry url() loads / legacy expression()).
+  s = s.replace(/\sstyle\s*=\s*("[^"]*"|'[^']*')/gi, '');
+  // javascript:/vbscript: in any URL-bearing attribute.
+  s = s.replace(/\s(href|src|srcset|xlink:href|action|formaction|background)\s*=\s*("(?:\s*(?:javascript|vbscript):)[^"]*"|'(?:\s*(?:javascript|vbscript):)[^']*')/gi, '');
+  // Remote resource loads on loader attributes (keep inline data: images).
+  s = s.replace(/\s(src|srcset|background)\s*=\s*("\s*(?:https?:)?\/\/[^"]*"|'\s*(?:https?:)?\/\/[^']*')/gi, '');
+  return s;
+}
+
 /** Normalise/validate one snippet record; returns null if unusable. */
 function normalizeSnippet(raw, origin) {
   if (!raw || typeof raw !== 'object') return null;
   const trigger = typeof raw.trigger === 'string' ? raw.trigger.trim() : '';
   if (!trigger) return null;
+  const resolvedOrigin = origin || raw.origin || 'personal';
   const out = {
     trigger,
     replacement: typeof raw.replacement === 'string' ? raw.replacement : '',
     label: typeof raw.label === 'string' ? raw.label : trigger,
     enabled: raw.enabled !== false,
-    origin: origin || raw.origin || 'personal',
+    origin: resolvedOrigin,
   };
   // Optional attachment: an image (pasted inline) or a file (copied to clipboard
   // so it can be pasted as an attachment). Stored as base64 so it syncs with the
@@ -42,7 +74,10 @@ function normalizeSnippet(raw, origin) {
   // Optional rich-text HTML variant of the replacement (bold/italic/lists/
   // links/inline images). Kept as a string so it syncs in the team library.
   if (typeof raw.html === 'string' && raw.html.trim()) {
-    out.html = raw.html;
+    // Team/cloud snippets come from other people, so their HTML is untrusted
+    // and must be sanitized before it can reach the clipboard. Personal HTML is
+    // already sanitized in the renderer.
+    out.html = resolvedOrigin === 'team' ? sanitizeUntrustedHtml(raw.html) : raw.html;
   }
   return out;
 }
@@ -174,4 +209,4 @@ class Store {
   }
 }
 
-module.exports = { normalizeSnippet, mergeSnippets, combineShared, parseLibrary, Store };
+module.exports = { normalizeSnippet, sanitizeUntrustedHtml, mergeSnippets, combineShared, parseLibrary, Store };
