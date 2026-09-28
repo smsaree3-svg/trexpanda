@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { mergeSnippets, parseLibrary, normalizeSnippet } = require('../src/store');
+const { mergeSnippets, parseLibrary, normalizeSnippet, Store } = require('../src/store');
 const { fetchTeamLibrary, writeTeamLibrary, looksLikeUrl } = require('../src/sync');
 
 let passed = 0;
@@ -70,6 +70,38 @@ test('fetchTeamLibrary errors clearly on a missing source', async () => {
   let threw = false;
   try { await fetchTeamLibrary(''); } catch (e) { threw = true; }
   assert.strictEqual(threw, true);
+});
+
+test('free-tier counter: local buffer + server reconciliation', () => {
+  const data = {};
+  const store = new Store({ get: (k, d) => (k in data ? data[k] : d), set: (k, v) => { data[k] = v; } });
+  const eff = () => store.getDailyUsage().count;
+
+  assert.strictEqual(eff(), 0);
+  store.bumpDailyUsage(); store.bumpDailyUsage();
+  assert.strictEqual(eff(), 2);
+  assert.strictEqual(store.pendingFreeDelta(), 2);         // not yet on server
+
+  store.setServerUsage(2);                                 // server acknowledges the flush
+  assert.strictEqual(store.pendingFreeDelta(), 0);
+
+  store.setServerUsage(5);                                 // another device used more
+  assert.strictEqual(eff(), 5, 'adopts a higher server count');
+
+  // Clearing local data must not grant a fresh allowance once the server knows.
+  for (const k in data) delete data[k];
+  store.setServerUsage(5);
+  assert.strictEqual(eff(), 5, 'server count survives a cleared local store');
+
+  store.bumpDailyUsage();                                  // one offline use
+  assert.strictEqual(eff(), 6);
+  assert.strictEqual(store.pendingFreeDelta(), 1);
+
+  // A UTC-day rollover resets the effective count to 0.
+  const y = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const yk = y.getUTCFullYear() + '-' + String(y.getUTCMonth() + 1).padStart(2, '0') + '-' + String(y.getUTCDate()).padStart(2, '0');
+  data.dailyUsage = { date: yk, local: 99, server: 99 };
+  assert.strictEqual(eff(), 0, 'yesterday\'s count does not carry over');
 });
 
 console.log('\nsync: ' + passed + ' passed');
