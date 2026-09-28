@@ -11,9 +11,12 @@
  *   - Paid (Pro): an active Stripe subscription. Full features incl. export.
  *   - Unlocked (coupon/comp): a grant that unlocks Pro, optionally time-limited.
  *     Same powers as Pro.
- *   - Expired: trial is over and there's no subscription or grant. The app goes
- *     read-only — snippets stop expanding and no new ones can be added, but the
- *     user can still open the app, view, and (only if they later pay) export.
+ *   - Expired: trial is over and there's no subscription or grant. Instead of
+ *     going read-only, the app drops to a metered FREE TIER: a limited number of
+ *     expansions per day that tightens over time (25/day for the first 15 days
+ *     past the trial, then 10/day, then 5/day from 30 days on). Adding new
+ *     snippets still requires Pro. Once the daily allowance is spent, expansion
+ *     pauses until the next local day or an upgrade.
  *   - Signed out: nothing is unlocked; you must sign in to start/continue a trial.
  *
  * The trial clock is anchored to the account's creation time (from Supabase
@@ -44,6 +47,19 @@ const ACTIVE_STATUSES = ['active', 'trialing', 'past_due'];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Graduated free-tier daily expansion cap after the trial ends. It tightens over
+ * time to nudge conversion, keyed off how many days have passed since the trial
+ * ended: 25/day for the first 15 days, 10/day for the next 15, then 5/day.
+ * @param {number} daysSinceTrialEnd whole days since trialEndsAt (>= 0)
+ */
+function freeDailyLimit(daysSinceTrialEnd) {
+  const d = Number.isFinite(daysSinceTrialEnd) ? daysSinceTrialEnd : 9999;
+  if (d < 15) return 25;
+  if (d < 30) return 10;
+  return 5;
+}
+
 /** Parse an ISO string or epoch-ms into epoch-ms, or null. */
 function toMs(v) {
   if (v == null) return null;
@@ -60,6 +76,7 @@ function toMs(v) {
  * @param {boolean} s.hasGrant              a coupon/comp grant row exists
  * @param {string|number|null} s.grantUnlockedUntil  grant expiry (null => lifetime)
  * @param {boolean} s.isAdmin
+ * @param {number} s.freeUsesToday          expansions already used today (free tier)
  * @param {number} s.now                    current time (epoch ms)
  * @returns {object} JSON-safe access descriptor
  */
@@ -81,7 +98,19 @@ function computeAccess(s) {
 
   const isPaid = signedIn && (subActive || grantActive);
   const trialing = signedIn && !isPaid && trialEndsAt != null && now < trialEndsAt;
-  const hasAccess = isPaid || trialing;
+
+  // Expired = signed in, not paid, trial elapsed. Such users drop to the metered
+  // free tier: a graduated number of expansions per day (see freeDailyLimit).
+  const expired = signedIn && !isPaid && !trialing;
+  const freeUsesToday = Math.max(0, Number.isFinite(s.freeUsesToday) ? s.freeUsesToday : 0);
+  const daysSinceTrialEnd = expired && trialEndsAt != null
+    ? Math.max(0, Math.floor((now - trialEndsAt) / DAY_MS))
+    : null;
+  const dailyLimit = expired ? freeDailyLimit(daysSinceTrialEnd) : null;
+  const dailyRemaining = expired ? Math.max(0, dailyLimit - freeUsesToday) : null;
+  const freeTierActive = expired && freeUsesToday < dailyLimit;
+
+  const hasAccess = isPaid || trialing || freeTierActive;
 
   let state;
   if (!signedIn) state = 'signed_out';
@@ -99,11 +128,15 @@ function computeAccess(s) {
     signedIn,
     isAdmin,
     isPaid,                                 // Pro powers (subscription OR grant)
-    hasAccess,                              // may use the expander / add snippets
-    canAdd: hasAccess,                      // can create new snippets
+    hasAccess,                              // may use the expander right now
+    canAdd: isPaid || trialing,             // creating NEW snippets stays Pro/trial-only
     canExport: isPaid,                      // export is paid-only (off during trial)
     trialEndsAt,                            // epoch ms | null
     trialDaysLeft,
+    // Metered free tier (expired users only; null/0 otherwise).
+    dailyLimit,                             // expansions allowed today
+    dailyUsed: expired ? freeUsesToday : 0,
+    dailyRemaining,                         // expansions left today
     unlockedUntil: grantActive ? (grantUntil || null) : null,
     subStatus: s.subStatus || null,
   };
@@ -119,13 +152,16 @@ function unknown() {
   return {
     state: 'signed_out', signedIn: false, isAdmin: false,
     isPaid: false, hasAccess: false, canAdd: false, canExport: false,
-    trialEndsAt: null, trialDaysLeft: 0, unlockedUntil: null, subStatus: null,
+    trialEndsAt: null, trialDaysLeft: 0,
+    dailyLimit: null, dailyUsed: 0, dailyRemaining: null,
+    unlockedUntil: null, subStatus: null,
   };
 }
 
 module.exports = {
   TRIAL_DAYS,
   ACTIVE_STATUSES,
+  freeDailyLimit,
   computeAccess,
   hasAccess,
   unknown,
