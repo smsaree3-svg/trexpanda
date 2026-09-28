@@ -111,6 +111,24 @@ class CloudService {
     };
   }
 
+  /**
+   * Account-linked free-tier daily counter. get reads today's (UTC) server
+   * count; bump adds `n` uses (flushing the offline buffer) and returns the new
+   * total. Both are enforced server-side (SECURITY DEFINER), keyed to auth.uid.
+   */
+  async getFreeUsage() {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('get_free_usage');
+    if (error) throw new Error(error.message || 'Could not read usage.');
+    return typeof data === 'number' ? data : 0;
+  }
+  async bumpFreeUsage(n = 1) {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('bump_free_usage', { p_n: n });
+    if (error) throw new Error(error.message || 'Could not record usage.');
+    return typeof data === 'number' ? data : 0;
+  }
+
   /** Redeem a coupon code (server validates + records + grants). */
   async redeemCoupon(code) {
     const client = this._requireClient();
