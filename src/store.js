@@ -136,11 +136,15 @@ function parseLibrary(payload) {
   return list.map((r) => normalizeSnippet(r, 'team')).filter(Boolean);
 }
 
-/** Local calendar day as YYYY-MM-DD (used to reset the free-tier daily count). */
-function localDayKey(d = new Date()) {
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
+/**
+ * UTC calendar day as YYYY-MM-DD. The free-tier counter is keyed to the UTC day
+ * so it lines up with the server (Supabase records usage under its own UTC
+ * date); a stored count from another day reads as 0.
+ */
+function utcDayKey(d = new Date()) {
+  return d.getUTCFullYear() + '-' +
+    String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getUTCDate()).padStart(2, '0');
 }
 
 // ---------------------------------------------------------------------------
@@ -189,20 +193,44 @@ class Store {
     this.backend.set('planRaw', raw || null);
   }
 
-  // Free-tier daily expansion counter. Keyed to the LOCAL calendar day so it
-  // resets at the user's midnight; a stored count from another day reads as 0.
-  getDailyUsage() {
-    const today = localDayKey();
+  // Free-tier daily expansion counter, account-linked with a local buffer.
+  // We keep two numbers for the current UTC day: `local` (this device's
+  // optimistic count, bumped instantly on every free expansion so gating works
+  // offline) and `server` (the authoritative Supabase count, last fetched on
+  // sync/sign-in). The effective count is the max of the two, so neither
+  // clearing local data nor switching devices grants extra expansions. Offline
+  // uses accumulate in `local` and are flushed to the server on the next sync
+  // (see pendingFreeDelta / main.js resolveEntitlement).
+  _getUsageRaw() {
+    const today = utcDayKey();
     const raw = this.backend.get('dailyUsage', null);
-    if (!raw || raw.date !== today) return { date: today, count: 0 };
-    return { date: raw.date, count: Math.max(0, raw.count | 0) };
+    if (!raw || raw.date !== today) return { date: today, local: 0, server: 0 };
+    return { date: today, local: Math.max(0, raw.local | 0), server: Math.max(0, raw.server | 0) };
   }
-  /** Increment today's counter and return the new usage. */
+  /** Effective usage for today: { date, count } where count = max(local, server). */
+  getDailyUsage() {
+    const u = this._getUsageRaw();
+    return { date: u.date, count: Math.max(u.local, u.server) };
+  }
+  /** Optimistically record one local expansion; returns the new effective usage. */
   bumpDailyUsage() {
-    const cur = this.getDailyUsage();
-    const next = { date: cur.date, count: cur.count + 1 };
-    this.backend.set('dailyUsage', next);
-    return next;
+    const u = this._getUsageRaw();
+    u.local += 1;
+    this.backend.set('dailyUsage', u);
+    return { date: u.date, count: Math.max(u.local, u.server) };
+  }
+  /** Adopt the authoritative server count (never lower than what we have). */
+  setServerUsage(n) {
+    const u = this._getUsageRaw();
+    u.server = Math.max(u.server, Math.max(0, n | 0));
+    if (u.local < u.server) u.local = u.server; // server is ahead (other device / cleared data)
+    this.backend.set('dailyUsage', u);
+    return { date: u.date, count: Math.max(u.local, u.server) };
+  }
+  /** Local uses not yet acknowledged by the server (to flush on sync). */
+  pendingFreeDelta() {
+    const u = this._getUsageRaw();
+    return Math.max(0, u.local - u.server);
   }
 
   getSettings() {
