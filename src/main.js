@@ -94,6 +94,7 @@ async function resolveEntitlement() {
       if (st && st.signedIn) {
         planRaw = await cloud.getEntitlement();
         store.setPlanRaw(planRaw);
+        await reconcileFreeUsage(); // sync the account-linked daily counter
         pushState();
         return currentPlan();
       }
@@ -107,6 +108,25 @@ async function resolveEntitlement() {
   }
   pushState();
   return currentPlan();
+}
+
+/**
+ * Reconcile the account-linked free-tier counter with the server: adopt the
+ * server's authoritative count (catches usage from another device or a cleared
+ * local store), then flush any uses this device made offline. Best-effort; an
+ * error just leaves the local buffer to flush on the next sync.
+ */
+async function reconcileFreeUsage() {
+  if (!cloud || !cloud.configured()) return;
+  try {
+    const server = await cloud.getFreeUsage();
+    store.setServerUsage(server);
+    const delta = store.pendingFreeDelta();
+    if (delta > 0) {
+      const updated = await cloud.bumpFreeUsage(delta);
+      store.setServerUsage(updated);
+    }
+  } catch (_) { /* offline or transient, retry on next resolve */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +361,9 @@ function scheduleSync() {
   }
   if (cloud && cloud.configured()) {
     syncCloud();
-    cloudSyncTimer = setInterval(syncCloud, mins * 60 * 1000);
+    // Also re-resolve entitlement on the interval so the account-linked free
+    // counter reconciles with the server even while the app sits in the tray.
+    cloudSyncTimer = setInterval(() => { syncCloud(); resolveEntitlement().catch(() => {}); }, mins * 60 * 1000);
   }
 }
 
