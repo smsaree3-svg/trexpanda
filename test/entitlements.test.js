@@ -41,13 +41,45 @@ ok('trial with 5 days elapsed reports 25 days left', () => {
   assert.strictEqual(a.state, 'trialing');
 });
 
-ok('trial lapses exactly at 30 days => expired, read-only', () => {
+ok('trial lapsed at 30 days => expired free tier: 25/day, adding still blocked', () => {
   const a = ent.computeAccess({ signedIn: true, createdAt: createdDaysAgo(30), now: NOW });
   assert.strictEqual(a.state, 'expired');
-  assert.strictEqual(a.hasAccess, false);
-  assert.strictEqual(a.canAdd, false);
+  assert.strictEqual(a.hasAccess, true, 'free tier grants limited expansion');
+  assert.strictEqual(a.canAdd, false, 'creating new snippets stays Pro/trial-only');
   assert.strictEqual(a.canExport, false);
   assert.strictEqual(a.trialDaysLeft, 0);
+  assert.strictEqual(a.dailyLimit, 25);
+  assert.strictEqual(a.dailyRemaining, 25);
+});
+
+ok('free tier: allowance is consumed, then expansion is blocked', () => {
+  const base = { signedIn: true, createdAt: createdDaysAgo(31), now: NOW };
+  const some = ent.computeAccess({ ...base, freeUsesToday: 10 });
+  assert.strictEqual(some.hasAccess, true);
+  assert.strictEqual(some.dailyUsed, 10);
+  assert.strictEqual(some.dailyRemaining, 15);
+  const done = ent.computeAccess({ ...base, freeUsesToday: 25 });
+  assert.strictEqual(done.hasAccess, false, 'no free expansions left today');
+  assert.strictEqual(done.dailyRemaining, 0);
+  assert.strictEqual(done.state, 'expired');
+});
+
+ok('free tier daily cap degrades with account age (25 -> 10 -> 5)', () => {
+  const capAt = (ageDays) => ent.computeAccess({ signedIn: true, createdAt: createdDaysAgo(ageDays), now: NOW }).dailyLimit;
+  assert.strictEqual(capAt(30), 25); // trial just ended
+  assert.strictEqual(capAt(44), 25); // <15 days past trial
+  assert.strictEqual(capAt(45), 10); // 15 days past trial
+  assert.strictEqual(capAt(59), 10);
+  assert.strictEqual(capAt(60), 5);  // 30 days past trial
+  assert.strictEqual(capAt(400), 5);
+});
+
+ok('freeDailyLimit tier boundaries', () => {
+  assert.strictEqual(ent.freeDailyLimit(0), 25);
+  assert.strictEqual(ent.freeDailyLimit(14), 25);
+  assert.strictEqual(ent.freeDailyLimit(15), 10);
+  assert.strictEqual(ent.freeDailyLimit(29), 10);
+  assert.strictEqual(ent.freeDailyLimit(30), 5);
 });
 
 ok('active subscription => pro, full access incl export (even after trial)', () => {
