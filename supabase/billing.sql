@@ -384,7 +384,63 @@ begin
 end;
 $$;
 
+-- ===========================================================================
+-- Free-tier daily usage (account-linked expansion counter after the trial)
+--
+-- Once the trial ends the app gives a graduated number of expansions per day
+-- (25 -> 10 -> 5, see src/entitlements.js). We record that count HERE, keyed to
+-- the user and the UTC day, so it can't be reset by clearing local data or
+-- switching devices. The app keeps a local buffer for instant/offline use and
+-- reconciles with this table on sync (see main.js reconcileFreeUsage).
+-- ===========================================================================
+create table if not exists public.free_usage (
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  day        date not null,                 -- UTC calendar day
+  count      integer not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, day)
+);
+alter table public.free_usage enable row level security;
+drop policy if exists free_usage_select_own on public.free_usage;
+create policy free_usage_select_own on public.free_usage
+  for select to authenticated using (user_id = auth.uid());
+-- No client insert/update/delete policies: writes go only through bump_free_usage.
+
+-- Today's (UTC) free-tier count for the caller, 0 if there's no row yet.
+create or replace function public.get_free_usage()
+  returns integer language sql stable security definer set search_path = public as $$
+  select coalesce((
+    select count from public.free_usage
+    where user_id = auth.uid() and day = (now() at time zone 'utc')::date
+  ), 0);
+$$;
+
+-- Add p_n uses to today's (UTC) count for the caller and return the new total.
+-- p_n lets the app flush several offline uses in one call. The day is computed
+-- server-side (UTC), so a client can't win a fresh allowance by faking a date.
+create or replace function public.bump_free_usage(p_n integer default 1)
+  returns integer language plpgsql security definer set search_path = public as $$
+declare
+  v_uid   uuid := auth.uid();
+  v_day   date := (now() at time zone 'utc')::date;
+  v_n     integer := greatest(0, coalesce(p_n, 0));
+  v_count integer;
+begin
+  if v_uid is null then
+    raise exception 'Not signed in' using errcode = '42501';
+  end if;
+  insert into public.free_usage(user_id, day, count, updated_at)
+    values (v_uid, v_day, v_n, now())
+  on conflict (user_id, day) do update
+    set count = public.free_usage.count + excluded.count, updated_at = now()
+  returning count into v_count;
+  return v_count;
+end;
+$$;
+
 -- Allow signed-in users to call these RPCs (the functions enforce their own rules).
+grant execute on function public.get_free_usage() to authenticated;
+grant execute on function public.bump_free_usage(integer) to authenticated;
 grant execute on function public.redeem_coupon(text) to authenticated;
 grant execute on function public.is_admin(uuid) to authenticated;
 grant execute on function public.admin_create_coupon(text,text,integer,integer,timestamptz,text) to authenticated;
