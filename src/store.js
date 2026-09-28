@@ -136,6 +136,13 @@ function parseLibrary(payload) {
   return list.map((r) => normalizeSnippet(r, 'team')).filter(Boolean);
 }
 
+/** Local calendar day as YYYY-MM-DD (used to reset the free-tier daily count). */
+function localDayKey(d = new Date()) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
 // ---------------------------------------------------------------------------
 // Persistent store (runtime only — requires electron-store).
 // ---------------------------------------------------------------------------
@@ -180,6 +187,22 @@ class Store {
   }
   setPlanRaw(raw) {
     this.backend.set('planRaw', raw || null);
+  }
+
+  // Free-tier daily expansion counter. Keyed to the LOCAL calendar day so it
+  // resets at the user's midnight; a stored count from another day reads as 0.
+  getDailyUsage() {
+    const today = localDayKey();
+    const raw = this.backend.get('dailyUsage', null);
+    if (!raw || raw.date !== today) return { date: today, count: 0 };
+    return { date: raw.date, count: Math.max(0, raw.count | 0) };
+  }
+  /** Increment today's counter and return the new usage. */
+  bumpDailyUsage() {
+    const cur = this.getDailyUsage();
+    const next = { date: cur.date, count: cur.count + 1 };
+    this.backend.set('dailyUsage', next);
+    return next;
   }
 
   getSettings() {
