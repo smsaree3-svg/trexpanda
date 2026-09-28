@@ -46,7 +46,8 @@ function planBadge() {
     case 'coupon':   return { text: p.unlockedUntil ? 'Unlocked' : 'Unlocked · lifetime', cls: 'ok' };
     case 'trialing': return { text: 'Trial · ' + p.trialDaysLeft + ' day' + (p.trialDaysLeft === 1 ? '' : 's') + ' left',
                               cls: p.trialDaysLeft <= 3 ? 'bad' : '' };
-    case 'expired':  return { text: 'Trial ended', cls: 'bad' };
+    case 'expired':  return { text: 'Free: ' + (p.dailyRemaining || 0) + ' of ' + (p.dailyLimit || 0) + ' today',
+                              cls: (p.dailyRemaining || 0) > 0 ? '' : 'bad' };
     default:         return { text: 'Sign in to start trial', cls: 'bad' };
   }
 }
@@ -67,9 +68,13 @@ function renderPlan() {
   if (banner) {
     if (planState() === 'expired') {
       banner.style.display = 'block'; banner.className = 'banner';
-      banner.innerHTML = '⛔ Your free trial has ended. Snippets won\'t expand until you subscribe. ' +
-        'Your snippets are safe — <a href="#" id="lnk-upgrade1">subscribe</a> or ' +
-        '<a href="#" id="lnk-redeem1">redeem a code</a> to switch it back on.';
+      const rem = p.dailyRemaining || 0;
+      const lim = p.dailyLimit || 0;
+      banner.innerHTML = (rem > 0
+          ? '⏳ Free plan: <b>' + rem + ' of ' + lim + '</b> expansions left today (resets tomorrow). '
+          : '⛔ You\'ve used all <b>' + lim + '</b> free expansions today. They reset tomorrow. ') +
+        '<a href="#" id="lnk-upgrade1">Subscribe</a> for unlimited, or ' +
+        '<a href="#" id="lnk-redeem1">redeem a code</a>.';
     } else if (planState() === 'signed_out') {
       banner.style.display = 'block'; banner.className = 'banner';
       banner.innerHTML = '👋 Sign in to start your <b>30-day free trial</b>. ' +
