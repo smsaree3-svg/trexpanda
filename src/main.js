@@ -79,7 +79,7 @@ function rebuildEngine() {
 function currentPlan() {
   const raw = planRaw || store.getPlanRaw();
   if (!raw) return entitlements.unknown();
-  return entitlements.computeAccess({ ...raw, now: Date.now() });
+  return entitlements.computeAccess({ ...raw, now: Date.now(), freeUsesToday: store.getDailyUsage().count });
 }
 
 /**
@@ -149,9 +149,11 @@ function onKeyUp(e) {
 async function onKeyDown(e) {
   const settings = store.getSettings();
   if (!settings.enabled) return;
-  // Expansion is gated on access: it works during the trial and while paid, but
-  // stops once the trial has expired with no subscription/coupon (or signed out).
-  if (!currentPlan().hasAccess) return;
+  // Expansion is gated on access: unlimited while trialing/paid, and after the
+  // trial it drops to the metered free tier (a few expansions per day). Blocked
+  // only when signed out or the day's free allowance is spent.
+  const plan = currentPlan();
+  if (!plan.hasAccess) return;
 
   if (SHIFT_CODES.has(e.keycode)) { shiftDown = true; return; }
 
@@ -181,6 +183,7 @@ async function onKeyDown(e) {
         await inject.expand(action, clipboard);
       }
       stats.expansionsThisSession++;
+      if (plan.state === 'expired') store.bumpDailyUsage(); // consumed one free daily expansion
       pushState();
     } catch (err) {
       console.error('Injection failed:', err);
@@ -430,6 +433,8 @@ async function insertSuggestion(trigger) {
   hideSuggest();
   expander.reset();
   if (!snippet || !inject.available()) return;
+  const plan = currentPlan();
+  if (!plan.hasAccess) return; // free-tier allowance spent (or signed out)
 
   const rendered = expander.render(snippet.replacement || '');
   const action = {
@@ -445,6 +450,7 @@ async function insertSuggestion(trigger) {
     else if (action.html) await inject.expandHtml(action, clipboard);
     else await inject.expand(action, clipboard);
     stats.expansionsThisSession++;
+    if (plan.state === 'expired') store.bumpDailyUsage(); // consumed one free daily expansion
     pushState();
   } catch (err) {
     console.error('Suggestion insert failed:', err);
