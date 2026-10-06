@@ -27,7 +27,14 @@ const http = require('http');
 const DEFAULT_PORT = 8765;
 const CALLBACK_PATH = '/callback';
 
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function page(title, message) {
+  title = escapeHtml(title);
+  message = escapeHtml(message);
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f1420;color:#e6ebf5;
 display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
@@ -97,7 +104,12 @@ function loopbackOAuth({ client, provider, openExternal, port = DEFAULT_PORT, ti
       }
     });
 
-    server.listen(port, '127.0.0.1', async () => {
+    // Bind to the SAME hostname the redirect uses ("localhost"), not the literal
+    // 127.0.0.1. If Node listens on 127.0.0.1 while the browser is redirected to
+    // "localhost" and the OS resolves localhost to IPv6 ::1 first, the callback
+    // hits ::1 where nothing is listening and the sign-in hangs until timeout.
+    // Using the same name on both sides makes them resolve to the same address.
+    server.listen(port, 'localhost', async () => {
       try {
         const redirectTo = `http://localhost:${port}${CALLBACK_PATH}`;
         const { data, error } = await client.auth.signInWithOAuth({
