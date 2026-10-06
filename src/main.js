@@ -38,9 +38,14 @@ let stats = {
   lastCloudSyncError: null,
 };
 
-// Shift tracking for the global hook.
+// Shift / Caps Lock tracking for the global hook.
 const SHIFT_CODES = new Set([42, 54]);
 let shiftDown = false;
+let capsOn = false;
+// True while WE are injecting keystrokes (Backspaces + paste). The global hook
+// also captures our synthetic events; without this guard those re-enter
+// onKeyDown, corrupt the buffer, and can pop spurious suggestions or re-fire.
+let injecting = false;
 
 // ---------------------------------------------------------------------------
 
@@ -162,20 +167,34 @@ function stopHook() {
   hookRunning = false;
 }
 
+/** Start or stop the OS keyboard hook to match the current enabled setting. */
+function reconcileHook() {
+  if (store.getSettings().enabled) startHook();
+  else stopHook();
+}
+
 function onKeyUp(e) {
   if (SHIFT_CODES.has(e.keycode)) shiftDown = false;
 }
 
 async function onKeyDown(e) {
+  // Ignore the synthetic keystrokes we inject during an expansion so they don't
+  // re-enter the engine and corrupt the buffer / re-fire triggers.
+  if (injecting) return;
+
   const settings = store.getSettings();
   if (!settings.enabled) return;
+
+  // Track modifier/lock state even while gated, so it's correct the moment
+  // access resumes. Caps Lock toggles on each keydown of the Caps key.
+  if (SHIFT_CODES.has(e.keycode)) { shiftDown = true; return; }
+  if (e.keycode === K.CAPS_LOCK) { capsOn = !capsOn; return; }
+
   // Expansion is gated on access: unlimited while trialing/paid, and after the
   // trial it drops to the metered free tier (a few expansions per day). Blocked
   // only when signed out or the day's free allowance is spent.
   const plan = currentPlan();
   if (!plan.hasAccess) return;
-
-  if (SHIFT_CODES.has(e.keycode)) { shiftDown = true; return; }
 
   // Keys that break/adjust the typing context.
   if (e.keycode === K.Backspace) { expander.onBackspace(); refreshSuggestions(settings); return; }
@@ -185,7 +204,7 @@ async function onKeyDown(e) {
     return;
   }
 
-  const ch = charFor(e.keycode, shiftDown);
+  const ch = charFor(e.keycode, shiftDown, capsOn);
   if (ch == null) { expander.reset(); hideSuggest(); return; }
 
   const action = expander.onChar(ch);
@@ -194,6 +213,10 @@ async function onKeyDown(e) {
   // Expansion matched — inject the replacement.
   hideSuggest();
   if (inject.available()) {
+    // Count the free-tier use BEFORE the async injection so a burst of fast
+    // expansions can't all read the pre-bump count and slip past the daily cap.
+    if (plan.state === 'expired') store.bumpDailyUsage();
+    injecting = true;
     try {
       if (action.attachment) {
         await expandAttachment(action);
@@ -203,10 +226,12 @@ async function onKeyDown(e) {
         await inject.expand(action, clipboard);
       }
       stats.expansionsThisSession++;
-      if (plan.state === 'expired') store.bumpDailyUsage(); // consumed one free daily expansion
       pushState();
     } catch (err) {
       console.error('Injection failed:', err);
+    } finally {
+      // Keep the guard a hair longer to swallow trailing synthetic key events.
+      setTimeout(() => { injecting = false; }, 30);
     }
   }
 }
@@ -220,48 +245,53 @@ async function onKeyDown(e) {
  */
 async function expandAttachment(action) {
   const att = action.attachment;
-  const previousText = clipboard.readText();
+  // Snapshot ALL clipboard flavors once and restore after (overlap-safe); the
+  // old code saved only text and restored on a bare timer outside try/finally,
+  // so an error left the replacement/path stranded on the user's clipboard.
+  inject.beginExpansion(clipboard);
+  try {
+    // Delete the typed trigger first.
+    await inject.pressBackspaces(action.backspaces);
 
-  // Delete the typed trigger first.
-  await inject.pressBackspaces(action.backspaces);
-
-  // If the snippet also has text, paste that first.
-  if (action.replacement) {
-    clipboard.writeText(action.replacement);
-    await delay(20);
-    await inject.paste();
-    await delay(60);
-  }
-
-  const buffer = Buffer.from(att.data, 'base64');
-
-  if (att.type === 'image') {
-    const img = nativeImage.createFromBuffer(buffer);
-    if (!img.isEmpty()) {
-      clipboard.writeImage(img);
-      await delay(30);
-      await inject.paste();
-    }
-  } else {
-    // Write to a stable temp path and copy the FILE to the clipboard.
-    const dir = path.join(os.tmpdir(), 'trexpanda');
-    try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
-    const filePath = path.join(dir, att.name || 'attachment');
-    fs.writeFileSync(filePath, buffer);
-    const copied = await copyFileToClipboard(filePath);
-    if (copied) {
-      await delay(60);
-      await inject.paste();
-    } else {
-      // Fallback: paste the file path as text so the user still gets something.
-      clipboard.writeText(filePath);
+    // If the snippet also has text, paste that first.
+    if (action.replacement) {
+      clipboard.writeText(action.replacement);
       await delay(20);
       await inject.paste();
+      await delay(60);
     }
-  }
 
-  // Restore the user's previous text clipboard shortly after.
-  setTimeout(() => { try { clipboard.writeText(previousText); } catch (_) {} }, 250);
+    const buffer = Buffer.from(att.data, 'base64');
+
+    if (att.type === 'image') {
+      const img = nativeImage.createFromBuffer(buffer);
+      if (!img.isEmpty()) {
+        clipboard.writeImage(img);
+        await delay(30);
+        await inject.paste();
+      }
+    } else {
+      // Write to a stable temp path and copy the FILE to the clipboard.
+      const dir = path.join(os.tmpdir(), 'trexpanda');
+      try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
+      const filePath = path.join(dir, att.name || 'attachment');
+      fs.writeFileSync(filePath, buffer);
+      const copied = await copyFileToClipboard(filePath);
+      if (copied) {
+        await delay(60);
+        await inject.paste();
+      } else {
+        // Fallback: paste the file path as text so the user still gets something.
+        clipboard.writeText(filePath);
+        await delay(20);
+        await inject.paste();
+      }
+    }
+  } finally {
+    // Restore the user's previous clipboard shortly after (longer settle for the
+    // file/image paste path).
+    inject.endExpansion(clipboard, 300);
+  }
 }
 
 function delay(ms) {
@@ -467,15 +497,18 @@ async function insertSuggestion(trigger) {
     caretBack: rendered.caretBack,
     attachment: snippet.attachment || null,
   };
+  if (plan.state === 'expired') store.bumpDailyUsage(); // count before the async inject (cap safety)
+  injecting = true;
   try {
     if (action.attachment) await expandAttachment(action);
     else if (action.html) await inject.expandHtml(action, clipboard);
     else await inject.expand(action, clipboard);
     stats.expansionsThisSession++;
-    if (plan.state === 'expired') store.bumpDailyUsage(); // consumed one free daily expansion
     pushState();
   } catch (err) {
     console.error('Suggestion insert failed:', err);
+  } finally {
+    setTimeout(() => { injecting = false; }, 30);
   }
 }
 
@@ -529,7 +562,7 @@ function refreshTrayMenu() {
       label: settings.enabled ? 'Expansion: On' : 'Expansion: Off',
       type: 'checkbox',
       checked: settings.enabled,
-      click: () => { store.setSettings({ enabled: !settings.enabled }); refreshTrayMenu(); pushState(); },
+      click: () => { store.setSettings({ enabled: !settings.enabled }); reconcileHook(); refreshTrayMenu(); pushState(); },
     },
     { label: 'Sync team library now', click: () => syncNow() },
     { type: 'separator' },
@@ -583,11 +616,14 @@ function registerIpc() {
   ipcMain.handle('save-personal', (_e, list) => {
     const next = Array.isArray(list) ? list : [];
     const plan = currentPlan();
-    const prevLen = store.getPersonal().length;
     // Block ADDING new snippets when the user has no access (signed out, or the
     // trial has expired with no subscription/coupon). Editing and deleting what
     // they already have stays allowed so nobody is locked out of their own data.
-    if (next.length > prevLen && !plan.canAdd) {
+    // Compare by TRIGGER SET, not list length: a length check is bypassable by
+    // deleting one snippet and adding a new one in the same save.
+    const prevTriggers = new Set((store.getPersonal() || []).map((s) => s && s.trigger));
+    const addsNew = next.some((s) => s && s.trigger && !prevTriggers.has(s.trigger));
+    if (addsNew && !plan.canAdd) {
       return { ok: false, error: 'locked', state: plan.state };
     }
     store.setPersonal(next);
@@ -597,12 +633,14 @@ function registerIpc() {
   });
 
   ipcMain.handle('save-settings', (_e, next) => {
-    store.setSettings(next || {});
+    const s = next && typeof next === 'object' ? next : {};
+    store.setSettings(s);
     rebuildEngine();
+    reconcileHook(); // start/stop the keyboard hook to match the new enabled state
     refreshTrayMenu();
     scheduleSync();
-    if (typeof next.launchAtLogin === 'boolean') {
-      app.setLoginItemSettings({ openAtLogin: next.launchAtLogin });
+    if (typeof s.launchAtLogin === 'boolean') {
+      app.setLoginItemSettings({ openAtLogin: s.launchAtLogin });
     }
     pushState();
     return { ok: true };
@@ -650,14 +688,26 @@ function registerIpc() {
     },
   };
 
+  // Only genuine CloudService methods are callable — its OWN prototype methods,
+  // excluding private (_-prefixed) ones and inherited Object members like
+  // `constructor`/`toString`. This stops a compromised renderer from reaching
+  // prototype internals through the generic cloud.call bridge.
+  function cloudMethodAllowed(method) {
+    if (!cloud || typeof method !== 'string' || method[0] === '_' || method === 'constructor') return false;
+    const proto = Object.getPrototypeOf(cloud);
+    return Object.getOwnPropertyNames(proto).includes(method) && typeof cloud[method] === 'function';
+  }
+
   ipcMain.handle('cloud', async (_e, payload) => {
     const { method, args = [] } = payload || {};
+    const callArgs = Array.isArray(args) ? args : [];
     try {
-      if (typeof cloudLocal[method] === 'function') {
-        return { ok: true, data: await cloudLocal[method](...args) };
+      if (typeof method === 'string' && Object.prototype.hasOwnProperty.call(cloudLocal, method)
+          && typeof cloudLocal[method] === 'function') {
+        return { ok: true, data: await cloudLocal[method](...callArgs) };
       }
-      if (cloud && typeof cloud[method] === 'function') {
-        return { ok: true, data: await cloud[method](...args) };
+      if (cloudMethodAllowed(method)) {
+        return { ok: true, data: await cloud[method](...callArgs) };
       }
       return { ok: false, error: 'Unknown cloud method: ' + method };
     } catch (err) {
