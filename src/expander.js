@@ -151,8 +151,14 @@ class Expander {
     let caretBack = 0;
     const marker = text.indexOf('$|');
     if (marker !== -1) {
-      caretBack = text.length - marker - 2; // chars to the right of the marker
-      text = text.slice(0, marker) + text.slice(marker + 2);
+      // Everything after the FIRST marker, with any further "$|" markers also
+      // stripped (consistent with renderHtml, which strips all of them).
+      const after = text.slice(marker + 2).split('$|').join('');
+      // Count caret-back in CODE POINTS, not UTF-16 code units: the caller moves
+      // the caret with Left-arrow presses, which step one code point / grapheme
+      // at a time, so an astral emoji or symbol is ONE Left press, not two.
+      caretBack = Array.from(after).length;
+      text = text.slice(0, marker) + after;
     }
     return { text, caretBack };
   }
