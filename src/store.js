@@ -30,18 +30,39 @@
  */
 function sanitizeUntrustedHtml(html) {
   let s = String(html);
-  // Whole dangerous elements, with their contents.
-  s = s.replace(/<\s*(script|style|iframe|object|embed|link|meta|base|form)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
+  // Dangerous elements, with their contents. svg/math/applet/template/noscript
+  // are included because they can host script/handlers or mutation-XSS vectors.
+  const BAD = 'script|style|iframe|object|embed|link|meta|base|form|svg|math|applet|template|noscript';
+  s = s.replace(new RegExp('<\\s*(' + BAD + ')\\b[^>]*>[\\s\\S]*?<\\s*/\\s*\\1\\s*>', 'gi'), '');
   // Self-closing or unclosed forms of the same tags.
-  s = s.replace(/<\s*(script|style|iframe|object|embed|link|meta|base|form)\b[^>]*\/?>/gi, '');
-  // Inline event handlers: on...="..." | on...='...' | on...=value
-  s = s.replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
-  // Inline styles (can carry url() loads / legacy expression()).
-  s = s.replace(/\sstyle\s*=\s*("[^"]*"|'[^']*')/gi, '');
-  // javascript:/vbscript: in any URL-bearing attribute.
-  s = s.replace(/\s(href|src|srcset|xlink:href|action|formaction|background)\s*=\s*("(?:\s*(?:javascript|vbscript):)[^"]*"|'(?:\s*(?:javascript|vbscript):)[^']*')/gi, '');
-  // Remote resource loads on loader attributes (keep inline data: images).
-  s = s.replace(/\s(src|srcset|background)\s*=\s*("\s*(?:https?:)?\/\/[^"]*"|'\s*(?:https?:)?\/\/[^']*')/gi, '');
+  s = s.replace(new RegExp('<\\s*(?:' + BAD + ')\\b[^>]*/?>', 'gi'), '');
+  // Inline event handlers. HTML allows either whitespace OR "/" as the attribute
+  // separator, so `<img/onerror=...>` must be caught too; match quoted AND
+  // unquoted values. (The old regex required a leading \s and a quoted value, so
+  // `<img/onerror=alert(1) src=x>` slipped through.)
+  s = s.replace(/[\s/]on[a-z][a-z0-9_-]*\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, ' ');
+  // Inline styles (can carry url() loads / legacy expression()), quoted OR not.
+  s = s.replace(/[\s/]style\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, ' ');
+  // Dangerous URL schemes (javascript:/vbscript:) in any URL-bearing attribute.
+  // Normalize the value first (decode HTML entities, strip whitespace/control
+  // chars) so entity/tab/newline obfuscation like `jav&#9;ascript:` can't hide
+  // the scheme. Quoted and unquoted values are both handled.
+  s = s.replace(
+    /([\s/])(href|src|srcset|xlink:href|action|formaction|background|poster)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
+    (m, sep, attr, val) => {
+      const raw = val.replace(/^["']|["']$/g, '');
+      const decoded = raw
+        .replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+        .replace(/&#(\d+);?/g, (_, d) => String.fromCharCode(parseInt(d, 10)))
+        .replace(/&colon;/gi, ':');
+      const norm = decoded.replace(/[\u0000- ]+/g, '').toLowerCase();
+      if (/^(javascript|vbscript):/.test(norm)) return sep; // drop the whole attribute
+      return m;
+    }
+  );
+  // Remote resource loads on loader attributes (keep inline data: images),
+  // quoted OR unquoted.
+  s = s.replace(/[\s/](src|srcset|background|poster)\s*=\s*("\s*(?:https?:)?\/\/[^"]*"|'\s*(?:https?:)?\/\/[^']*'|(?:https?:)?\/\/[^\s>]+)/gi, ' ');
   return s;
 }
 
@@ -130,9 +151,18 @@ function combineShared(lists = []) {
 function parseLibrary(payload) {
   let data = payload;
   if (typeof payload === 'string') {
-    data = JSON.parse(payload);
+    try {
+      data = JSON.parse(payload);
+    } catch (_) {
+      // A non-JSON body (e.g. an HTML error page served at a "raw" URL, or a
+      // truncated download) must not crash sync — surface a clear error instead.
+      throw new Error('Team library is not valid JSON.');
+    }
   }
-  const list = Array.isArray(data) ? data : Array.isArray(data.snippets) ? data.snippets : [];
+  // Guard the shape: `null`, numbers, strings, etc. must not throw on .snippets.
+  const list = Array.isArray(data)
+    ? data
+    : (data && typeof data === 'object' && Array.isArray(data.snippets)) ? data.snippets : [];
   return list.map((r) => normalizeSnippet(r, 'team')).filter(Boolean);
 }
 
