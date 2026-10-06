@@ -77,6 +77,21 @@ test('caret marker $| sets caretBack and is removed', () => {
   assert.strictEqual(a.caretBack, ',\nRegards'.length);
 });
 
+test('caret marker counts CODE POINTS (emoji), not UTF-16 units', () => {
+  const eng = new Expander([{ trigger: ';e', replacement: 'hi $|😀end' }]);
+  const a = typeString(eng, ';e');
+  assert(!a.replacement.includes('$|'), 'marker stripped');
+  // "😀end" is 4 code points; the caret moves back 4 Left presses, not 5.
+  assert.strictEqual(a.caretBack, 4);
+});
+
+test('render strips EXTRA $| markers beyond the first', () => {
+  const eng = new Expander([{ trigger: ';m', replacement: 'a$|b$|c' }]);
+  const a = typeString(eng, ';m');
+  assert.strictEqual(a.replacement, 'abc', 'all markers removed');
+  assert.strictEqual(a.caretBack, 2); // caret before "bc"
+});
+
 test('reset() clears context (e.g. after Enter/click)', () => {
   const eng = new Expander([{ trigger: 'go', replacement: 'X' }]);
   eng.onChar('g');
