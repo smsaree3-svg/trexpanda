@@ -84,11 +84,31 @@ drop policy if exists friendships_insert on public.friendships;
 create policy friendships_insert on public.friendships
   for insert to authenticated with check (requester_id = auth.uid());
 
--- either party may update (addressee accepts; requester can re-touch its own row).
+-- Only the ADDRESSEE may update a friendship row — that update IS the acceptance.
+-- The previous policy let EITHER party update (and, with no WITH CHECK, reused
+-- USING as the check), so a requester could self-accept their own pending request
+-- without the addressee's consent. Pin the updater to the addressee on both sides.
 drop policy if exists friendships_update on public.friendships;
 create policy friendships_update on public.friendships
   for update to authenticated
-  using (requester_id = auth.uid() or addressee_id = auth.uid());
+  using (addressee_id = auth.uid())
+  with check (addressee_id = auth.uid());
+
+-- Belt-and-suspenders: an accept must not be able to rewrite either party to a
+-- third user (RLS WITH CHECK can't compare against the OLD row, so use a trigger).
+create or replace function public.friendships_lock_parties()
+  returns trigger language plpgsql as $$
+  begin
+    if new.requester_id <> old.requester_id or new.addressee_id <> old.addressee_id then
+      raise exception 'cannot change friendship parties';
+    end if;
+    return new;
+  end;
+  $$;
+drop trigger if exists friendships_no_party_change on public.friendships;
+create trigger friendships_no_party_change
+  before update on public.friendships
+  for each row execute function public.friendships_lock_parties();
 
 drop policy if exists friendships_delete on public.friendships;
 create policy friendships_delete on public.friendships
