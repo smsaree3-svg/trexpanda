@@ -29,12 +29,76 @@ try {
 
 const isMac = process.platform === 'darwin';
 
+// How long to wait after the paste keystroke before restoring the user's
+// clipboard. nut-js only DISPATCHES the Cmd/Ctrl+V; the target app consumes the
+// clipboard asynchronously, often well after the key event returns (more so on
+// remote-desktop/Citrix or a busy machine). Restoring too early makes the app
+// paste the OLD clipboard instead of the replacement, intermittently. 400ms is a
+// safe margin that still feels instant.
+const RESTORE_MS = 400;
+// Settle time between writing the clipboard / sending Backspaces and the paste,
+// so the target has processed the deletions and sees the new clipboard first.
+const SETTLE_MS = 35;
+
 function available() {
   return !!nut;
 }
 
 function getLoadError() {
   return loadError ? String(loadError.message || loadError) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard snapshot / restore.
+//
+// The old code saved only clipboard.readText() and wrote it back on a short
+// fixed timer. That had two defects: (1) it destroyed any image/HTML/RTF the
+// user had copied (readText() returns "" for those), and (2) overlapping
+// expansions would "restore" one expansion's replacement as if it were the
+// user's clipboard. We now snapshot every common flavor, and use an in-flight
+// counter so the ORIGINAL clipboard is captured once before the first expansion
+// and restored only after the last overlapping expansion's window elapses.
+// ---------------------------------------------------------------------------
+function snapshotClipboard(clipboard) {
+  const snap = { text: '', html: '', image: null };
+  try { snap.text = clipboard.readText(); } catch (_) {}
+  try { snap.html = clipboard.readHTML(); } catch (_) {}
+  try { const img = clipboard.readImage(); if (img && !img.isEmpty()) snap.image = img; } catch (_) {}
+  return snap;
+}
+
+function restoreClipboard(clipboard, snap) {
+  if (!snap) return;
+  try {
+    if (snap.image) {
+      // An image was the primary flavor; restore it (optionally with its text).
+      clipboard.writeImage(snap.image);
+    } else if (snap.html) {
+      clipboard.write({ text: snap.text || '', html: snap.html });
+    } else {
+      clipboard.writeText(snap.text || '');
+    }
+  } catch (_) {}
+}
+
+let _inFlight = 0;
+let _saved = null;
+
+/** Capture the user's clipboard before an expansion (once per overlap group). */
+function beginExpansion(clipboard) {
+  if (_inFlight === 0) _saved = snapshotClipboard(clipboard);
+  _inFlight++;
+}
+
+/** Schedule restoration of the user's clipboard after this expansion settles. */
+function endExpansion(clipboard, delayMs) {
+  setTimeout(() => {
+    _inFlight = Math.max(0, _inFlight - 1);
+    if (_inFlight === 0 && _saved) {
+      restoreClipboard(clipboard, _saved);
+      _saved = null;
+    }
+  }, delayMs == null ? RESTORE_MS : delayMs);
 }
 
 async function pressBackspaces(n) {
@@ -70,21 +134,16 @@ async function pressLeft(n) {
  */
 async function expand(action, clipboard) {
   if (!nut) return;
-  const previous = clipboard.readText();
+  beginExpansion(clipboard);
   try {
     await pressBackspaces(action.backspaces);
     clipboard.writeText(action.replacement);
     // small settle so the clipboard write is visible to the target app
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => setTimeout(r, SETTLE_MS));
     await paste();
     await pressLeft(action.caretBack || 0);
   } finally {
-    // Restore the user's clipboard shortly after the paste completes.
-    setTimeout(() => {
-      try {
-        clipboard.writeText(previous);
-      } catch (_) {}
-    }, 120);
+    endExpansion(clipboard);
   }
 }
 
@@ -97,19 +156,18 @@ async function expand(action, clipboard) {
  */
 async function expandHtml(action, clipboard) {
   if (!nut) return;
-  const previous = clipboard.readText();
+  beginExpansion(clipboard);
   try {
     await pressBackspaces(action.backspaces);
     clipboard.write({ text: action.replacement || '', html: action.html });
-    await new Promise((r) => setTimeout(r, 25));
+    await new Promise((r) => setTimeout(r, SETTLE_MS));
     await paste();
   } finally {
-    setTimeout(() => {
-      try {
-        clipboard.writeText(previous);
-      } catch (_) {}
-    }, 140);
+    endExpansion(clipboard);
   }
 }
 
-module.exports = { available, getLoadError, expand, expandHtml, pressBackspaces, paste };
+module.exports = {
+  available, getLoadError, expand, expandHtml, pressBackspaces, paste,
+  beginExpansion, endExpansion, snapshotClipboard, restoreClipboard,
+};
