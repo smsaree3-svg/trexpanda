@@ -590,6 +590,28 @@ function sanitizeHtml(html) {
   return doc.body.innerHTML;
 }
 
+// Sanitize HTML AT PASTE TIME. sanitizeHtml otherwise only runs on save, so
+// pasting attacker-crafted HTML (e.g. <img src=x onerror=...>) into the
+// contenteditable would insert it live into the renderer DOM and fire handlers
+// before any sanitization. Intercept the paste, clean the HTML (or fall back to
+// plain text), and insert the safe version.
+(function attachPasteSanitizer() {
+  const el = document.getElementById('edit-repl');
+  if (!el) return;
+  el.addEventListener('paste', (e) => {
+    const cb = e.clipboardData || window.clipboardData;
+    if (!cb) return;
+    const html = cb.getData('text/html');
+    const text = cb.getData('text/plain');
+    e.preventDefault();
+    if (html) {
+      document.execCommand('insertHTML', false, sanitizeHtml(html));
+    } else if (text != null) {
+      document.execCommand('insertText', false, text);
+    }
+  });
+})();
+
 // Save/restore the editor selection so toolbar actions (esp. the link input,
 // which steals focus) apply to the text the user had selected.
 let rtSavedRange = null;
