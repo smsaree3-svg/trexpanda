@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { mergeSnippets, parseLibrary, normalizeSnippet, Store } = require('../src/store');
+const { mergeSnippets, parseLibrary, normalizeSnippet, sanitizeUntrustedHtml, Store } = require('../src/store');
 const { fetchTeamLibrary, writeTeamLibrary, looksLikeUrl } = require('../src/sync');
 
 let passed = 0;
@@ -102,6 +102,26 @@ test('free-tier counter: local buffer + server reconciliation', () => {
   const yk = y.getUTCFullYear() + '-' + String(y.getUTCMonth() + 1).padStart(2, '0') + '-' + String(y.getUTCDate()).padStart(2, '0');
   data.dailyUsage = { date: yk, local: 99, server: 99 };
   assert.strictEqual(eff(), 0, 'yesterday\'s count does not carry over');
+});
+
+test('parseLibrary tolerates null/garbage without crashing', () => {
+  assert.deepStrictEqual(parseLibrary('null'), []);
+  assert.deepStrictEqual(parseLibrary('42'), []);
+  assert.deepStrictEqual(parseLibrary('"a string"'), []);
+  assert.deepStrictEqual(parseLibrary(null), []);
+  assert.throws(() => parseLibrary('<html>not json</html>'), /not valid JSON/);
+});
+
+test('sanitizeUntrustedHtml neutralizes handler/scheme/remote bypasses', () => {
+  const S = sanitizeUntrustedHtml;
+  assert(!/onerror/i.test(S('<img/onerror=alert(1) src=x>')), 'slash-separated handler');
+  assert(!/onload/i.test(S('<svg/onload=alert(1)>')), 'svg wrapper + handler');
+  assert(!/javascript:/i.test(S('<a href=javascript:alert(1)>x</a>')), 'unquoted javascript: href');
+  assert(!/ascript/i.test(S('<a href="jav&#9;ascript:alert(1)">x</a>')), 'entity/tab-obfuscated scheme');
+  assert(!/evil\.com/i.test(S('<img src=//evil.com/beacon.png>')), 'unquoted remote beacon');
+  assert(!/evil\.com/i.test(S('<div style=background:url(//evil.com)>x</div>')), 'unquoted inline style');
+  // Self-contained data: images are still allowed through.
+  assert(/data:image\/png/i.test(S('<img src="data:image/png;base64,AAAA">')), 'keeps inline data image');
 });
 
 console.log('\nsync: ' + passed + ' passed');
