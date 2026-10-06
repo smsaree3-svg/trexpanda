@@ -76,7 +76,9 @@ function readLibraryFromPath(p) {
 function writeTeamLibrary(folderPath, snippets, meta = {}) {
   const target = path.join(folderPath, LIBRARY_FILENAME);
   const payload = {
-    version: (meta.version || 0) + 1,
+    // Coerce to a number first: a version read back as a string ("3") would make
+    // `"3" + 1` = "31" and break monotonicity.
+    version: (Number(meta.version) || 0) + 1,
     updatedAt: new Date().toISOString(),
     snippets,
   };
