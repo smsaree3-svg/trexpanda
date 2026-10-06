@@ -137,6 +137,32 @@ ok('isAdmin passes through independently of plan', () => {
   assert.strictEqual(a.state, 'trialing');
 });
 
+ok('missing/invalid clock => fail closed (no access, not a free trial)', () => {
+  const a = ent.computeAccess({ signedIn: true, createdAt: NOW }); // no `now`
+  assert.strictEqual(a.hasAccess, false);
+  assert.strictEqual(a.canAdd, false);
+  assert.strictEqual(a.signedIn, true);
+  const b = ent.computeAccess({ signedIn: true, createdAt: NOW, now: 'not-a-time' });
+  assert.strictEqual(b.hasAccess, false);
+});
+
+ok('grant with an UNPARSEABLE expiry is NOT treated as lifetime', () => {
+  const a = ent.computeAccess({
+    signedIn: true, createdAt: createdDaysAgo(400), hasGrant: true,
+    grantUnlockedUntil: 'garbage-date', now: NOW,
+  });
+  assert.strictEqual(a.isPaid, false, 'unparseable expiry must fail closed');
+  assert.strictEqual(a.state, 'expired');
+});
+
+ok('currentPeriodEnd passes through for Pro only', () => {
+  const cpe = '2026-12-01T00:00:00Z';
+  const pro = ent.computeAccess({ signedIn: true, createdAt: createdDaysAgo(400), subStatus: 'active', currentPeriodEnd: cpe, now: NOW });
+  assert.strictEqual(pro.currentPeriodEnd, cpe);
+  const exp = ent.computeAccess({ signedIn: true, createdAt: createdDaysAgo(400), currentPeriodEnd: cpe, now: NOW });
+  assert.strictEqual(exp.currentPeriodEnd, null);
+});
+
 ok('descriptor is JSON-safe (round-trips)', () => {
   const a = ent.computeAccess({ signedIn: true, createdAt: NOW, subStatus: 'active', now: NOW });
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(a)));
