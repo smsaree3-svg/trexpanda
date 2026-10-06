@@ -82,19 +82,31 @@ function toMs(v) {
  */
 function computeAccess(s) {
   s = s || {};
-  const now = typeof s.now === 'number' ? s.now : toMs(s.now) || 0;
   const signedIn = !!s.signedIn;
   const isAdmin = !!s.isAdmin;
+
+  // Resolve the clock. If we have no trustworthy `now`, FAIL CLOSED (no access)
+  // rather than defaulting to epoch 0, which would make `now < trialEndsAt` true
+  // for everyone and silently grant a full trial to expired/long-dead accounts.
+  const now = typeof s.now === 'number' && Number.isFinite(s.now) ? s.now : toMs(s.now);
+  if (!Number.isFinite(now)) {
+    return { ...unknown(), signedIn, isAdmin };
+  }
 
   const createdAt = toMs(s.createdAt);
   const trialEndsAt = createdAt != null ? createdAt + TRIAL_DAYS * DAY_MS : null;
 
   const subActive = ACTIVE_STATUSES.includes(s.subStatus);
 
+  // Grant is active only when it is a lifetime grant (no expiry at all) OR it has
+  // an expiry that BOTH parses AND is still in the future. A present-but-garbage
+  // `grantUnlockedUntil` (toMs -> null) must NOT be promoted to a lifetime unlock.
   const grantUntil = toMs(s.grantUnlockedUntil);
-  const grantActive = !!s.hasGrant && (s.grantUnlockedUntil == null || grantUntil == null
-    ? !!s.hasGrant // lifetime grant (no expiry)
-    : grantUntil > now);
+  const grantActive = !!s.hasGrant && (
+    s.grantUnlockedUntil == null
+      ? true
+      : (grantUntil != null && grantUntil > now)
+  );
 
   const isPaid = signedIn && (subActive || grantActive);
   const trialing = signedIn && !isPaid && trialEndsAt != null && now < trialEndsAt;
@@ -103,8 +115,12 @@ function computeAccess(s) {
   // free tier: a graduated number of expansions per day (see freeDailyLimit).
   const expired = signedIn && !isPaid && !trialing;
   const freeUsesToday = Math.max(0, Number.isFinite(s.freeUsesToday) ? s.freeUsesToday : 0);
+  // Count whole UTC calendar days between the trial end and now, matching how the
+  // daily counter resets (at UTC midnight). Keying this to rolling-from-signup
+  // 24h windows instead would drop the tier (25->10->5) mid-UTC-day and lock a
+  // user out before their counter resets.
   const daysSinceTrialEnd = expired && trialEndsAt != null
-    ? Math.max(0, Math.floor((now - trialEndsAt) / DAY_MS))
+    ? Math.max(0, Math.floor(now / DAY_MS) - Math.floor(trialEndsAt / DAY_MS))
     : null;
   const dailyLimit = expired ? freeDailyLimit(daysSinceTrialEnd) : null;
   const dailyRemaining = expired ? Math.max(0, dailyLimit - freeUsesToday) : null;
@@ -139,6 +155,7 @@ function computeAccess(s) {
     dailyRemaining,                         // expansions left today
     unlockedUntil: grantActive ? (grantUntil || null) : null,
     subStatus: s.subStatus || null,
+    currentPeriodEnd: subActive ? (s.currentPeriodEnd || null) : null, // renewal date (Pro)
   };
 }
 
@@ -154,7 +171,7 @@ function unknown() {
     isPaid: false, hasAccess: false, canAdd: false, canExport: false,
     trialEndsAt: null, trialDaysLeft: 0,
     dailyLimit: null, dailyUsed: 0, dailyRemaining: null,
-    unlockedUntil: null, subStatus: null,
+    unlockedUntil: null, subStatus: null, currentPeriodEnd: null,
   };
 }
 
