@@ -41,15 +41,24 @@ const TABLE = {
   57: [' ', ' '],
 };
 
+// uiohook keycode for the Caps Lock key (so callers can track its toggle).
+const CAPS_LOCK = 58;
+
 /**
  * @param {number} keycode uiohook event.keycode
  * @param {boolean} shift  is a Shift modifier held?
+ * @param {boolean} [caps] is Caps Lock currently ON?
  * @returns {string|null} the character produced, or null for non-printing keys
  */
-function charFor(keycode, shift) {
+function charFor(keycode, shift, caps) {
   const entry = TABLE[keycode];
   if (!entry) return null;
-  return shift ? entry[1] : entry[0];
+  let useShift = !!shift;
+  // Caps Lock only affects LETTER keys, and for them it inverts Shift: with Caps
+  // on and no Shift the OS produces the uppercase letter, and Caps + Shift makes
+  // it lowercase. Non-letter keys (digits, punctuation) are unaffected by Caps.
+  if (caps && /^[a-z]$/.test(entry[0])) useShift = !useShift;
+  return useShift ? entry[1] : entry[0];
 }
 
-module.exports = { charFor, K };
+module.exports = { charFor, K, CAPS_LOCK };
