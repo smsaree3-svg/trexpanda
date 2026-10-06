@@ -453,8 +453,10 @@ grant execute on function public.bump_free_usage(integer) to authenticated;
 grant execute on function public.redeem_coupon(text) to authenticated;
 -- Clients get only the no-arg (self) check; the uid-taking variant stays internal
 -- to the admin_* functions (which run as the definer and don't need this grant).
+-- Revoke from PUBLIC too: Postgres grants EXECUTE to PUBLIC on new functions by
+-- default, so revoking from authenticated alone would still leave it callable.
 grant execute on function public.is_admin() to authenticated;
-revoke execute on function public.is_admin(uuid) from authenticated;
+revoke execute on function public.is_admin(uuid) from public, authenticated;
 grant execute on function public.admin_create_coupon(text,text,integer,integer,timestamptz,text) to authenticated;
 grant execute on function public.admin_create_coupons_bulk(integer,text,text,integer,integer,timestamptz,text) to authenticated;
 grant execute on function public.admin_grant_user(uuid,integer,text) to authenticated;
