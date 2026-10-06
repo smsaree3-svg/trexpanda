@@ -95,8 +95,17 @@ class CloudService {
       client.from('grants').select('unlocked_until, source').eq('user_id', me).maybeSingle(),
       client.from('admins').select('user_id').eq('user_id', me).maybeSingle(),
     ]);
+    // A FAILED read (network blip, RLS hiccup, duplicate row) returns
+    // { data: null, error }. Treating that like "no subscription / no grant" would
+    // silently DOWNGRADE a paying user to the free tier. Throw instead so the
+    // caller falls back to the last-known-good cached snapshot.
+    if (subRes.error) throw new Error(subRes.error.message || 'Could not read subscription.');
+    if (grantRes.error) throw new Error(grantRes.error.message || 'Could not read grant.');
     const sub = subRes.data || null;
     const grant = grantRes.data || null;
+    // Admin is a privilege, so fail CLOSED (non-admin) on an admin read error
+    // rather than throwing the whole entitlement resolve.
+    const isAdmin = !adminRes.error && !!adminRes.data;
 
     return {
       signedIn: true,
@@ -107,7 +116,7 @@ class CloudService {
       hasGrant: !!grant,
       grantUnlockedUntil: grant ? grant.unlocked_until : null,
       grantSource: grant ? grant.source : null,
-      isAdmin: !!adminRes.data,
+      isAdmin,
     };
   }
 
