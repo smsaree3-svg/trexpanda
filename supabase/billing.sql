@@ -100,9 +100,18 @@ create policy admins_select_own on public.admins
 -- Helpers
 -- ===========================================================================
 
+-- INTERNAL use only (called by the admin_* SECURITY DEFINER functions below).
+-- Not granted to clients: letting any signed-in user call is_admin('<other>')
+-- would let them probe whether another account is an admin.
 create or replace function public.is_admin(uid uuid)
   returns boolean language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.admins a where a.user_id = uid);
+$$;
+
+-- Client-facing: reports ONLY whether the CALLER is an admin (no enumeration).
+create or replace function public.is_admin()
+  returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.admins a where a.user_id = auth.uid());
 $$;
 
 -- Does this user currently have paid access (Stripe sub OR active grant)?
@@ -442,7 +451,10 @@ $$;
 grant execute on function public.get_free_usage() to authenticated;
 grant execute on function public.bump_free_usage(integer) to authenticated;
 grant execute on function public.redeem_coupon(text) to authenticated;
-grant execute on function public.is_admin(uuid) to authenticated;
+-- Clients get only the no-arg (self) check; the uid-taking variant stays internal
+-- to the admin_* functions (which run as the definer and don't need this grant).
+grant execute on function public.is_admin() to authenticated;
+revoke execute on function public.is_admin(uuid) from authenticated;
 grant execute on function public.admin_create_coupon(text,text,integer,integer,timestamptz,text) to authenticated;
 grant execute on function public.admin_create_coupons_bulk(integer,text,text,integer,integer,timestamptz,text) to authenticated;
 grant execute on function public.admin_grant_user(uuid,integer,text) to authenticated;
