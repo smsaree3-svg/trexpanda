@@ -70,7 +70,14 @@ Deno.serve(async (req) => {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
-        await upsertSubscription(event.data.object as Stripe.Subscription);
+        const snapshot = event.data.object as Stripe.Subscription;
+        // Stripe does NOT guarantee event ordering. Re-fetch the CURRENT state so
+        // a delayed 'updated' (status active) can't overwrite a later 'deleted'
+        // (status canceled) and wrongly re-grant Pro. Fall back to the event's
+        // snapshot if the subscription can no longer be retrieved.
+        let sub = snapshot;
+        try { sub = await stripe.subscriptions.retrieve(snapshot.id); } catch (_) { /* use snapshot */ }
+        await upsertSubscription(sub);
         break;
       }
       default:
@@ -95,8 +102,11 @@ async function upsertSubscription(sub: Stripe.Subscription): Promise<void> {
     (sub.metadata && sub.metadata.supabase_user_id) ||
     (await userIdFromCustomer(sub.customer as string));
   if (!userId) {
+    // Don't silently succeed: throwing makes the handler return 500 so Stripe
+    // RETRIES later (the customer->user mapping may not be written yet). A plain
+    // `return` here would 200 the event and permanently drop the subscription.
     console.error('No supabase_user_id for subscription', sub.id, 'customer', sub.customer);
-    return;
+    throw new Error(`Unresolved user for subscription ${sub.id} (customer ${sub.customer})`);
   }
 
   const priceId = sub.items?.data?.[0]?.price?.id ?? null;
