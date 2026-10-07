@@ -374,6 +374,11 @@ async function saveSnippet() {
   // paragraph of text expands fine (and syncs smaller) without it.
   if (isFormatted(html)) snippet.html = html;
   if (editAttachment) snippet.attachment = editAttachment;
+  // Preserve the snippet's stable id when editing so a trigger rename keeps its
+  // identity for cross-device sync (main stamps updatedAt on save).
+  if (editIndex >= 0 && state.personal[editIndex] && state.personal[editIndex].id) {
+    snippet.id = state.personal[editIndex].id;
+  }
   const list = (state.personal || []).slice();
   if (editIndex >= 0) list[editIndex] = snippet; else list.push(snippet);
   const res = await window.api.savePersonal(list);
