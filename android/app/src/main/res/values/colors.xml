@@ -14,7 +14,7 @@
     <color name="accent">#46B4FF</color>
     <color name="danger">#FF6B81</color>
 
-    <color name="ic_launcher_background">#0A1024</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
 
     <!-- Keyboard -->
     <color name="kbBg">#0A1024</color>
