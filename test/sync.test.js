@@ -5,7 +5,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { mergeSnippets, parseLibrary, normalizeSnippet, sanitizeUntrustedHtml, Store } = require('../src/store');
+const { mergeSnippets, parseLibrary, normalizeSnippet, sanitizeUntrustedHtml, mergeSnippetsForSync, Store } = require('../src/store');
 const { fetchTeamLibrary, writeTeamLibrary, looksLikeUrl } = require('../src/sync');
 
 let passed = 0;
@@ -122,6 +122,90 @@ test('sanitizeUntrustedHtml neutralizes handler/scheme/remote bypasses', () => {
   assert(!/evil\.com/i.test(S('<div style=background:url(//evil.com)>x</div>')), 'unquoted inline style');
   // Self-contained data: images are still allowed through.
   assert(/data:image\/png/i.test(S('<img src="data:image/png;base64,AAAA">')), 'keeps inline data image');
+});
+
+test('mergeSnippetsForSync: remote-only snippet is adopted, not pushed', () => {
+  const now = Date.now();
+  const r = mergeSnippetsForSync({ live: [], tombstones: [], now,
+    remote: [{ id: 'a', trigger: ';a', replacement: 'A', updated_at: now - 1000, deleted_at: null }] });
+  assert.strictEqual(r.live.length, 1);
+  assert.strictEqual(r.live[0].trigger, ';a');
+  assert.strictEqual(r.push.length, 0);
+});
+
+test('mergeSnippetsForSync: local-only snippet is pushed', () => {
+  const now = Date.now();
+  const r = mergeSnippetsForSync({ tombstones: [], remote: [], now,
+    live: [{ id: 'b', trigger: ';b', replacement: 'B', updatedAt: now - 500 }] });
+  assert.strictEqual(r.push.length, 1);
+  assert.strictEqual(r.push[0].id, 'b');
+  assert.strictEqual(r.push[0].deleted_at, null);
+  assert.strictEqual(r.live.length, 1);
+});
+
+test('mergeSnippetsForSync: newer side wins (local newer => push, remote newer => adopt)', () => {
+  const now = Date.now();
+  const localWins = mergeSnippetsForSync({ tombstones: [], now,
+    live: [{ id: 'c', trigger: ';c', replacement: 'NEW', updatedAt: now }],
+    remote: [{ id: 'c', trigger: ';c', replacement: 'OLD', updated_at: now - 1000, deleted_at: null }] });
+  assert.strictEqual(localWins.live[0].replacement, 'NEW');
+  assert.strictEqual(localWins.push.length, 1);
+
+  const remoteWins = mergeSnippetsForSync({ tombstones: [], now,
+    live: [{ id: 'd', trigger: ';d', replacement: 'OLD', updatedAt: now - 1000 }],
+    remote: [{ id: 'd', trigger: ';d', replacement: 'NEW', updated_at: now, deleted_at: null }] });
+  assert.strictEqual(remoteWins.live[0].replacement, 'NEW');
+  assert.strictEqual(remoteWins.push.length, 0);
+});
+
+test('mergeSnippetsForSync: deletions propagate both ways via tombstones', () => {
+  const now = Date.now();
+  // remote deletion (newer) removes the local live snippet
+  const remoteDel = mergeSnippetsForSync({ tombstones: [], now,
+    live: [{ id: 'e', trigger: ';e', replacement: 'X', updatedAt: now - 1000 }],
+    remote: [{ id: 'e', trigger: ';e', updated_at: now, deleted_at: now }] });
+  assert.strictEqual(remoteDel.live.length, 0);
+  assert.strictEqual(remoteDel.tombstones.length, 1);
+  assert.strictEqual(remoteDel.push.length, 0);
+
+  // local deletion (newer) is pushed and the remote-live row does not resurrect
+  const localDel = mergeSnippetsForSync({ live: [], now,
+    tombstones: [{ id: 'f', trigger: ';f', deletedAt: now }],
+    remote: [{ id: 'f', trigger: ';f', replacement: 'X', updated_at: now - 1000, deleted_at: null }] });
+  assert.strictEqual(localDel.live.length, 0);
+  assert.strictEqual(localDel.push.length, 1);
+  assert(localDel.push[0].deleted_at, 'pushes a deletion');
+});
+
+test('Store.setPersonal assigns ids, stamps updatedAt, and tombstones deletions', () => {
+  const data = {};
+  const store = new Store({ get: (k, d) => (k in data ? data[k] : d), set: (k, v) => { data[k] = v; } });
+
+  store.setPersonal([{ trigger: ';a', replacement: 'A' }]);
+  let p = store.getPersonal();
+  assert.strictEqual(p.length, 1);
+  assert(p[0].id, 'assigns a stable id');
+  assert(p[0].updatedAt, 'stamps updatedAt');
+  const id = p[0].id;
+  const ts = p[0].updatedAt;
+
+  // Re-saving unchanged content must NOT bump updatedAt (avoids sync churn).
+  store.setPersonal(store.getPersonal());
+  assert.strictEqual(store.getPersonal()[0].updatedAt, ts, 'unchanged keeps timestamp');
+
+  // Editing content bumps updatedAt.
+  store.setPersonal([{ id, trigger: ';a', replacement: 'A2' }]);
+  assert.notStrictEqual(store.getPersonal()[0].updatedAt, ts, 'edit bumps timestamp');
+
+  // Deleting leaves a tombstone keyed by the same id.
+  store.setPersonal([]);
+  assert.strictEqual(store.getPersonal().length, 0);
+  assert.strictEqual(store.getSnippetTombstones().length, 1);
+  assert.strictEqual(store.getSnippetTombstones()[0].id, id);
+
+  // Re-adding the same id cancels the tombstone.
+  store.setPersonal([{ id, trigger: ';a', replacement: 'A' }]);
+  assert.strictEqual(store.getSnippetTombstones().length, 0);
 });
 
 console.log('\nsync: ' + passed + ' passed');
