@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Trexpanda</string>
+    <string name="ime_label">Trexpanda Keyboard</string>
+    <string name="ime_subtype_label">Trexpanda</string>
+</resources>
