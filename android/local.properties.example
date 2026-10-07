@@ -1,0 +1,9 @@
+# Copy this file to local.properties and fill in your values.
+# (local.properties is git-ignored and also holds your Android SDK path.)
+
+# Your Supabase project (same project as the desktop app):
+SUPABASE_URL=https://yiltfbpjubflwdajzrhe.supabase.co
+SUPABASE_ANON_KEY=PASTE-YOUR-SUPABASE-ANON-PUBLIC-KEY
+
+# Android Studio will add this automatically when you open the project:
+# sdk.dir=/Users/you/Library/Android/sdk
