@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var addButton: Button
     private lateinit var enableKeyboardButton: Button
     private lateinit var switchKeyboardButton: Button
+    private lateinit var cloudSettingsButton: Button
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: SnippetAdapter
 
@@ -42,6 +43,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        SupabaseConfig.load(this)
         auth = AuthManager(this)
         store = SnippetStore(this)
         sync = SyncManager(this, auth, store)
@@ -53,6 +55,7 @@ class MainActivity : AppCompatActivity() {
         addButton = findViewById(R.id.addButton)
         enableKeyboardButton = findViewById(R.id.enableKeyboardButton)
         switchKeyboardButton = findViewById(R.id.switchKeyboardButton)
+        cloudSettingsButton = findViewById(R.id.cloudSettingsButton)
         recycler = findViewById(R.id.recycler)
 
         adapter = SnippetAdapter(
@@ -64,11 +67,13 @@ class MainActivity : AppCompatActivity() {
 
         signInButton.setOnClickListener {
             if (!SupabaseConfig.isConfigured()) {
-                toast("Supabase not configured. Set SUPABASE_URL / SUPABASE_ANON_KEY in local.properties.")
+                toast("Add your Supabase anon key first.")
+                showCloudSettingsDialog()
             } else {
                 auth.startGoogleSignIn()
             }
         }
+        cloudSettingsButton.setOnClickListener { showCloudSettingsDialog() }
         signOutButton.setOnClickListener { auth.signOut(); refresh() }
         syncButton.setOnClickListener { runSync() }
         addButton.setOnClickListener { showEditDialog(null) }
@@ -130,6 +135,39 @@ class MainActivity : AppCompatActivity() {
             else -> "Not signed in"
         }
         adapter.submit(store.getPersonal().sortedBy { it.trigger ?: "" })
+    }
+
+    // ---- cloud settings ------------------------------------------------------
+
+    private fun showCloudSettingsDialog() {
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
+        val urlInput = EditText(this).apply {
+            hint = "Supabase URL"
+            setText(SupabaseConfig.currentUrl())
+            setSingleLine()
+        }
+        val keyInput = EditText(this).apply {
+            hint = "Supabase anon public key"
+            setText(SupabaseConfig.currentAnonKey())
+        }
+        container.addView(urlInput)
+        container.addView(keyInput)
+
+        AlertDialog.Builder(this)
+            .setTitle("Cloud settings")
+            .setMessage("Paste your Supabase anon (public) key to enable sign-in and cross-device sync. Find it in the Supabase dashboard under Project Settings, API.")
+            .setView(container)
+            .setPositiveButton("Save") { _, _ ->
+                SupabaseConfig.save(this, urlInput.text.toString(), keyInput.text.toString())
+                toast(if (SupabaseConfig.isConfigured()) "Cloud enabled. You can sign in now." else "URL and key are required.")
+                refresh()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ---- snippet editing -----------------------------------------------------
