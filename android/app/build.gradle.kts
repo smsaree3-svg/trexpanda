@@ -13,6 +13,14 @@ val localProps = Properties().apply {
 }
 fun secret(key: String): String = localProps.getProperty(key) ?: System.getenv(key) ?: ""
 
+// Release signing. The keystore and its passwords live in keystore.properties
+// (git-ignored), so no signing material is ever committed. Without that file the
+// project still builds debug normally.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.lumisha.trexpanda"
     compileSdk = 34
@@ -33,10 +41,22 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropsFile.exists()) {
+                storeFile = rootProject.file(keystoreProps["storeFile"] as String)
+                storePassword = keystoreProps["storePassword"] as String
+                keyAlias = keystoreProps["keyAlias"] as String
+                keyPassword = keystoreProps["keyPassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (keystorePropsFile.exists()) signingConfig = signingConfigs.getByName("release")
         }
     }
 
