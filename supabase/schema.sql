@@ -203,3 +203,17 @@ create policy snippets_update_own on public.snippets
 drop policy if exists snippets_delete_own on public.snippets;
 create policy snippets_delete_own on public.snippets
   for delete to authenticated using (user_id = auth.uid());
+
+-- --- Realtime --------------------------------------------------------------
+-- Broadcast row changes on `snippets` to subscribed clients so an edit on one
+-- device is pushed live to the others. RLS still applies per subscriber, so each
+-- client only receives changes to its own rows. Idempotent.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'snippets'
+  ) then
+    alter publication supabase_realtime add table public.snippets;
+  end if;
+end $$;
