@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trexpanda Help, How it works</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta name="description" content="How to set up and use Trexpanda on your computer and your phone. Create a short trigger once, type it anywhere, and Trexpanda types the full text for you." />
+<style>
+  :root{
+    --navy:#0a1633; --navy2:#0e1e44; --panel:#111f45; --line:rgba(255,255,255,.09);
+    --blue:#2f6bff; --blue2:#46b4ff; --text:#eaf0ff; --muted:#9fb0d0; --ink:#08122b;
+    --grad:linear-gradient(100deg,#1b3bff 0%,#2f6bff 45%,#46b4ff 100%);
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 700px at 80% -10%,#12285e 0%,transparent 60%),
+      radial-gradient(1000px 600px at -10% 10%,#0f2350 0%,transparent 55%),var(--navy);
+    color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px}
+  .grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* NAV */
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
+    background:rgba(10,22,51,.72);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:14px;height:66px;max-width:1120px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:20px}
+  .brand img{width:34px;height:34px;border-radius:8px}
+  nav .links{margin-left:auto;display:flex;gap:26px;align-items:center}
+  nav .links a{color:var(--muted);font-size:15px;font-weight:500}
+  nav .links a:hover,nav .links a.active{color:var(--text)}
+  .btn{display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer;
+    font:inherit;font-weight:600;padding:11px 20px;border-radius:11px;transition:.16s}
+  .btn.primary{background:var(--grad);color:#fff;box-shadow:0 6px 22px rgba(47,107,255,.35)}
+  .btn.primary:hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(47,107,255,.5)}
+
+  /* HERO */
+  header.hero{padding:62px 0 20px;text-align:center}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
+    color:var(--blue2);background:rgba(70,180,255,.1);border:1px solid rgba(70,180,255,.25);
+    padding:6px 13px;border-radius:999px;margin-bottom:22px}
+  h1{font-size:46px;line-height:1.08;font-weight:800;letter-spacing:-1px}
+  .hero p.sub{font-size:18px;color:var(--muted);margin:18px auto 0;max-width:620px}
+
+  section{padding:30px 0;scroll-margin-top:80px}
+  h2{font-size:30px;font-weight:800;letter-spacing:-.5px;margin-bottom:6px}
+  h2 .em{font-size:22px;margin-right:8px}
+  .lead{color:var(--muted);font-size:16px;margin-bottom:22px;max-width:680px}
+
+  /* CONCEPT */
+  .concept{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+    border:1px solid var(--line);border-radius:var(--radius);padding:26px 28px;margin-top:8px}
+  .concept .eqn{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:15px}
+  .tag{font-family:ui-monospace,Menlo,monospace;background:rgba(47,107,255,.16);
+    border:1px solid rgba(47,107,255,.34);color:#bcd2ff;padding:7px 12px;border-radius:9px;font-weight:600}
+  .tag.out{background:rgba(70,180,255,.12);border-color:rgba(70,180,255,.3);color:#cfe6ff}
+  .arrow{color:var(--muted);font-weight:700;font-size:18px}
+  .concept p{color:var(--muted);margin-top:14px;font-size:15px}
+
+  /* TABS */
+  .tabs{display:flex;gap:10px;justify-content:center;margin:10px 0 6px;flex-wrap:wrap}
+  .tab{cursor:pointer;font:inherit;font-weight:700;font-size:15px;color:var(--muted);
+    background:rgba(255,255,255,.04);border:1px solid var(--line);padding:12px 22px;border-radius:12px;transition:.16s}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:#fff;background:var(--grad);border-color:transparent;box-shadow:0 6px 22px rgba(47,107,255,.3)}
+  .panel{display:none}
+  .panel.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* STEPS */
+  .steps{display:grid;gap:16px;margin-top:8px}
+  .step{display:flex;gap:18px;background:rgba(255,255,255,.03);border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px 24px}
+  .step .num{flex:none;width:38px;height:38px;border-radius:11px;background:rgba(47,107,255,.18);
+    border:1px solid rgba(47,107,255,.4);color:#bcd2ff;font-weight:800;display:grid;place-items:center;font-size:17px}
+  .step h3{font-size:18px;margin-bottom:5px}
+  .step p{color:var(--muted);font-size:15px}
+  .step code{font-family:ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);
+    border:1px solid var(--line);padding:1px 7px;border-radius:6px;color:#cfe0ff;font-size:13.5px}
+  .note{margin-top:10px;font-size:13.5px;color:var(--blue2);background:rgba(70,180,255,.08);
+    border:1px solid rgba(70,180,255,.2);border-radius:10px;padding:10px 13px}
+
+  /* TRY IT */
+  .try{background:linear-gradient(180deg,#0c1c44,#0a1838);border:1px solid var(--line);
+    border-radius:var(--radius);box-shadow:0 24px 60px rgba(0,0,0,.4);overflow:hidden;margin-top:10px}
+  .try .bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.03)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .try .bar .title{margin-left:8px;font-size:13px;color:var(--muted)}
+  .try .body{padding:18px}
+  .try label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  #demoField{width:100%;min-height:120px;margin-top:8px;background:#071331;border:1px solid var(--line);
+    color:var(--text);border-radius:12px;padding:14px;font-size:15px;resize:vertical;line-height:1.55;
+    font-family:inherit;outline:none}
+  #demoField:focus{border-color:var(--blue)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  .chip{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:rgba(47,107,255,.14);
+    border:1px solid rgba(47,107,255,.3);color:#bcd2ff;padding:5px 10px;border-radius:8px;cursor:pointer}
+  .chip:hover{background:rgba(47,107,255,.26)}
+  .try .hint{font-size:12.5px;color:var(--muted);margin-top:12px}
+  .flash{color:var(--blue2);font-weight:600}
+
+  /* TOKENS TABLE */
+  .tokens{width:100%;border-collapse:collapse;margin-top:6px;font-size:15px}
+  .tokens th,.tokens td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+  .tokens th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+  .tokens td code{font-family:ui-monospace,Menlo,monospace;background:rgba(47,107,255,.14);
+    border:1px solid rgba(47,107,255,.3);color:#bcd2ff;padding:2px 8px;border-radius:7px}
+  .tokens tr:last-child td{border-bottom:none}
+  .tokens td .muted{color:var(--muted)}
+
+  /* FAQ */
+  .faq{display:grid;gap:12px;margin-top:8px}
+  details{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:14px;padding:4px 20px;transition:.16s}
+  details[open]{background:rgba(255,255,255,.05)}
+  summary{cursor:pointer;list-style:none;font-weight:700;font-size:16px;padding:16px 0;position:relative;padding-right:30px}
+  summary::-webkit-details-marker{display:none}
+  summary:after{content:"+";position:absolute;right:2px;top:14px;font-size:22px;color:var(--blue2);font-weight:400;transition:.2s}
+  details[open] summary:after{transform:rotate(45deg)}
+  details p{color:var(--muted);font-size:15px;padding:0 0 18px}
+  details p + p{padding-top:0}
+  details code{font-family:ui-monospace,Menlo,monospace;background:rgba(255,255,255,.07);
+    border:1px solid var(--line);padding:1px 7px;border-radius:6px;color:#cfe0ff;font-size:13.5px}
+
+  .divider{height:1px;background:var(--line);margin:8px 0}
+
+  /* CONTACT */
+  .contact{text-align:center;background:linear-gradient(180deg,#0b1a40,#0a1533);
+    border:1px solid var(--line);border-radius:var(--radius);padding:38px 28px;margin-top:20px}
+  .contact h2{margin-bottom:10px}
+  .contact p{color:var(--muted);max-width:520px;margin:0 auto 20px}
+
+  /* FOOTER */
+  footer{border-top:1px solid var(--line);margin-top:40px;padding:30px 0}
+  footer .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:14px;max-width:1120px}
+  footer .brand{font-size:16px}
+  footer .sp{margin-left:auto}
+
+  @media(max-width:720px){
+    h1{font-size:34px}
+    nav .links a:not(.navcta){display:none}
+    .wrap{padding:0 16px}
+    .step{padding:18px}
+    h2{font-size:25px}
+  }
+</style>
+</head>
+<body id="top">
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/"><img src="/icon.png" alt="Trexpanda logo" /><span class="grad-text">Trexpanda</span></a>
+    <div class="links">
+      <a href="/#features">Features</a>
+      <a href="/help.html" class="active">Help</a>
+      <a href="/#download">Download</a>
+      <a href="/#download" class="btn primary navcta">Get Trexpanda</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">Getting started</span>
+    <h1>How <span class="grad-text">Trexpanda</span> works</h1>
+    <p class="sub">Trexpanda types your long, repetitive text for you. You set up a short shortcut once, type it in any app, and the full text appears instantly. Here is everything you need to get going on your computer and your phone.</p>
+  </div>
+</header>
+
+<!-- THE IDEA -->
+<section>
+  <div class="wrap">
+    <h2>The one idea behind it</h2>
+    <p class="lead">Everything in Trexpanda is a snippet. A snippet is just two things: a short shortcut you type, and the full text it turns into.</p>
+    <div class="concept">
+      <div class="eqn">
+        <span class="tag">;addr</span>
+        <span class="arrow">&rarr;</span>
+        <span class="tag out">221B Baker Street, London</span>
+      </div>
+      <p>You type the shortcut <b>;addr</b> anywhere you can type (an email, a chat, a form, a note). Trexpanda sees it and instantly replaces it with the full address. You save the typing, every single time. Shortcuts are not case sensitive, so <b>;addr</b>, <b>;ADDR</b> and <b>;Addr</b> all do the same thing.</p>
+    </div>
+  </div>
+</section>
+
+<!-- TABS -->
+<section>
+  <div class="wrap">
+    <div class="tabs">
+      <button class="tab active" data-tab="pc">On your computer</button>
+      <button class="tab" data-tab="phone">On your phone</button>
+    </div>
+
+    <!-- PC PANEL -->
+    <div class="panel active" id="pc">
+      <h2 style="text-align:center;margin:24px 0 20px"><span class="em">&#128187;</span>Set up on Windows or Mac</h2>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div>
+          <h3>Download and open Trexpanda</h3>
+          <p>Get the app from the Download page and open it. It runs quietly in the background and sits in your menu bar (Mac) or system tray (Windows), ready whenever you type.</p>
+        </div></div>
+        <div class="step"><div class="num">2</div><div>
+          <h3>Sign in</h3>
+          <p>Sign in with your Google account. This is what keeps your snippets backed up and in sync, so the ones you make on your computer also show up on your phone, and the other way around.</p>
+        </div></div>
+        <div class="step"><div class="num">3</div><div>
+          <h3>Create your first snippet</h3>
+          <p>Click <b>New snippet</b>. In <b>Shortcut</b> type something short and unusual like <code>;sig</code>. In <b>Expands to</b> type the full text you want, for example your email signature. Save it.</p>
+          <div class="note">Tip: start every shortcut with a symbol such as <b>;</b> or <b>/</b>. That way it never fires by accident in the middle of a normal word.</div>
+        </div></div>
+        <div class="step"><div class="num">4</div><div>
+          <h3>Use it anywhere</h3>
+          <p>Switch to any app, start typing, and when you type your shortcut it turns into the full text on the spot. As you type, a small suggestion popup shows matching shortcuts, so you can pick one even if you forget the exact name.</p>
+        </div></div>
+        <div class="step"><div class="num">5</div><div>
+          <h3>Turn it on or off, and import in bulk</h3>
+          <p>In Settings you can switch expansion off for a moment if you need to, and switch it back on. You can also import a whole list of snippets at once from a CSV file, or export yours to a CSV to keep a copy.</p>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- PHONE PANEL -->
+    <div class="panel" id="phone">
+      <h2 style="text-align:center;margin:24px 0 20px"><span class="em">&#128241;</span>Set up on your phone</h2>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><div>
+          <h3>Install the app</h3>
+          <p>Install Trexpanda on your phone from the Download page. Trexpanda works as its own keyboard, so instead of changing every app, you type on the Trexpanda keyboard and your shortcuts work everywhere.</p>
+        </div></div>
+        <div class="step"><div class="num">2</div><div>
+          <h3>Turn on the Trexpanda keyboard</h3>
+          <p>Open the app and follow the one-time setup. It takes you to your phone's keyboard settings where you switch Trexpanda on, then allow it. This is a normal step your phone asks for any new keyboard.</p>
+        </div></div>
+        <div class="step"><div class="num">3</div><div>
+          <h3>Switch to it when you type</h3>
+          <p>In any app, tap a text box, then tap the small globe or keyboard icon to switch to the Trexpanda keyboard. Your shortcuts only expand while you are typing on the Trexpanda keyboard.</p>
+        </div></div>
+        <div class="step"><div class="num">4</div><div>
+          <h3>Sign in to sync</h3>
+          <p>Sign in with the same Google account you used on your computer. Every snippet you made there now appears on your phone automatically, and new ones you add on the phone flow back to your computer.</p>
+        </div></div>
+        <div class="step"><div class="num">5</div><div>
+          <h3>Type a shortcut</h3>
+          <p>Type your shortcut, for example <code>;sig</code>, and it expands right in the text box. Matching shortcuts also show in the strip above the keys, so you can tap one instead of typing the whole thing.</p>
+          <div class="note">The app also shows how much time you have saved, based on the number of words Trexpanda has typed for you.</div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TRY IT -->
+<section>
+  <div class="wrap">
+    <h2>Try it right here</h2>
+    <p class="lead">This box behaves like Trexpanda. Type one of the shortcuts below (or tap a chip to insert it) and watch it expand. Nothing is saved, it is just a demo.</p>
+    <div class="try">
+      <div class="bar">
+        <span class="dot" style="background:#ff5f57"></span>
+        <span class="dot" style="background:#febc2e"></span>
+        <span class="dot" style="background:#28c840"></span>
+        <span class="title">Practice box</span>
+      </div>
+      <div class="body">
+        <label for="demoField">Type here</label>
+        <textarea id="demoField" placeholder="Try typing ;hi or ;addr or ;date ..."></textarea>
+        <div class="chips" id="chipRow"></div>
+        <div class="hint" id="demoHint">Shortcuts in this demo: <span class="flash">;hi</span>, <span class="flash">;addr</span>, <span class="flash">;sig</span>, <span class="flash">;date</span>. Case does not matter.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TOKENS -->
+<section>
+  <div class="wrap">
+    <h2>Smart pieces you can drop into any snippet</h2>
+    <p class="lead">Inside the text a snippet expands to, you can use these special pieces. Trexpanda fills them in fresh every time.</p>
+    <table class="tokens">
+      <tr><th>Write this</th><th>You get</th></tr>
+      <tr><td><code>{date}</code></td><td>Today's date, like 2026-10-07 <span class="muted">(updates every time you use it)</span></td></tr>
+      <tr><td><code>{time}</code></td><td>The current time, like 14:09</td></tr>
+      <tr><td><code>{datetime}</code></td><td>Date and time together</td></tr>
+      <tr><td><code>$|</code></td><td>Where the cursor should land after the text appears. Handy for a greeting like <code>Dear $|,</code> so you can keep typing the name right away.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section>
+  <div class="wrap">
+    <h2>If something is not working</h2>
+    <p class="lead">A quick checklist for the most common questions.</p>
+    <div class="faq">
+      <details><summary>I typed my shortcut but nothing happened</summary>
+        <p>Run through these in order. First, make sure expansion is switched on in Settings. On the phone, make sure you are actually typing on the Trexpanda keyboard (tap the globe or keyboard icon to switch to it). Then check that you typed the shortcut exactly as you saved it, for example <code>;sig</code>, and remember a shortcut only fires once the whole thing is typed.</p>
+      </details>
+      <details><summary>My snippets are not showing up on my other device</summary>
+        <p>Sync works through your account. Sign in with the same Google account on both your computer and your phone. Once both are signed in to the same account, your snippets appear on both, usually within a few seconds. A working internet connection is needed for a fresh sync.</p>
+      </details>
+      <details><summary>Does the case of the shortcut matter?</summary>
+        <p>No. Shortcuts are not case sensitive, so <code>;brb</code>, <code>;BRB</code> and <code>;Brb</code> all expand the same snippet. This works the same on your computer and on your phone.</p>
+      </details>
+      <details><summary>A shortcut keeps firing when I did not mean it to</summary>
+        <p>That usually means the shortcut is a normal word, so it triggers while you write. Give it a symbol at the start, like <code>;</code> or <code>/</code>, for example <code>;addr</code> instead of <code>addr</code>. Short symbol shortcuts almost never fire by accident.</p>
+      </details>
+      <details><summary>Can I move my snippets in and out?</summary>
+        <p>Yes. On both the computer and the phone you can import a list of snippets from a CSV file and export your snippets to a CSV. This is the easy way to bring in a big batch at once or keep your own backup.</p>
+      </details>
+      <details><summary>Is my data private?</summary>
+        <p>Your snippets are tied to your own account and are only there to sync between your devices. You can read the full details on the <a href="/privacy.html" style="color:var(--blue2)">privacy page</a>.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section>
+  <div class="wrap">
+    <div class="contact">
+      <h2>Still stuck?</h2>
+      <p>If any step is not working the way this page describes, we are happy to help. Send us a note and tell us what you were doing when it went wrong.</p>
+      <a class="btn primary" href="mailto:hello@trexpanda.com">Email hello@trexpanda.com</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="/"><img src="/icon.png" alt="" style="width:24px;height:24px;border-radius:6px" /><span class="grad-text">Trexpanda</span></a>
+    <span>· Type Less. Do More.</span>
+    <span class="sp">© 2026 Trexpanda · Powered by <b style="color:var(--text)">Lumisha LLC</b></span>
+  </div>
+</footer>
+
+<script>
+  // Tab switching between Computer and Phone instructions.
+  document.querySelectorAll('.tab').forEach(function(t){
+    t.addEventListener('click', function(){
+      document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('.panel').forEach(function(x){x.classList.remove('active')});
+      t.classList.add('active');
+      document.getElementById(t.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---- Live practice box: a tiny, friendly imitation of the real engine. ----
+  var SNIPPETS = {
+    ';hi':   'Hi there, thanks so much for reaching out!',
+    ';addr': '221B Baker Street, London NW1 6XE',
+    ';sig':  'Best regards,\nThe Trexpanda Team\nhello@trexpanda.com',
+    ';date': null // filled in live below
+  };
+  function resolve(key){
+    if(key === ';date'){ return new Date().toISOString().slice(0,10); }
+    return SNIPPETS[key];
+  }
+  var longest = Math.max.apply(null, Object.keys(SNIPPETS).map(function(k){return k.length}));
+  var field = document.getElementById('demoField');
+  var hint = document.getElementById('demoHint');
+
+  field.addEventListener('input', function(){
+    var pos = field.selectionStart;
+    var before = field.value.slice(0, pos).toLowerCase(); // case-insensitive, like the real app
+    var best = null;
+    Object.keys(SNIPPETS).forEach(function(k){
+      if(before.endsWith(k) && (!best || k.length > best.length)) best = k;
+    });
+    if(best){
+      var full = resolve(best);
+      var start = pos - best.length;
+      field.value = field.value.slice(0, start) + full + field.value.slice(pos);
+      var caret = start + full.length;
+      field.setSelectionRange(caret, caret);
+      hint.innerHTML = 'Nice. <span class="flash">' + best + '</span> expanded. Try another one.';
+    }
+  });
+
+  // Clickable example chips that insert a shortcut for you.
+  var row = document.getElementById('chipRow');
+  Object.keys(SNIPPETS).forEach(function(k){
+    var c = document.createElement('span');
+    c.className = 'chip'; c.textContent = k;
+    c.addEventListener('click', function(){
+      field.focus();
+      var pos = field.selectionStart;
+      // Insert the shortcut, then fire the same expansion logic.
+      field.value = field.value.slice(0,pos) + k + field.value.slice(pos);
+      field.setSelectionRange(pos + k.length, pos + k.length);
+      field.dispatchEvent(new Event('input'));
+    });
+    row.appendChild(c);
+  });
+</script>
+</body>
+</html>

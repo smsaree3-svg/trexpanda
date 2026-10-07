@@ -3,210 +3,305 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Trexpanda — Type Less. Do More.</title>
+<title>Trexpanda. Type Less. Do More.</title>
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon.png">
-<meta name="description" content="Trexpanda is a text expander for Windows, macOS & Android. Type a short trigger, get the full text in any app. Your snippets sync live across your computer and your phone." />
+<meta name="description" content="Trexpanda is a text expander for Windows, macOS and Android. Type a short shortcut, get the full text in any app. Your snippets sync live across your computer and your phone." />
+<meta property="og:title" content="Trexpanda. Type Less. Do More." />
+<meta property="og:description" content="Type a short shortcut, get the full text in any app. Snippets sync live across your computer and your phone." />
+<meta property="og:image" content="/icon.png" />
+<meta name="theme-color" content="#070d1f" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root{
-    --navy:#0a1633; --navy2:#0e1e44; --panel:#111f45; --line:rgba(255,255,255,.09);
-    --blue:#2f6bff; --blue2:#46b4ff; --text:#eaf0ff; --muted:#9fb0d0; --ink:#08122b;
-    --grad:linear-gradient(100deg,#1b3bff 0%,#2f6bff 45%,#46b4ff 100%);
-    --radius:16px;
+    --bg:#070d1f; --bg2:#0a1430; --panel:#0e1a3c;
+    --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.14);
+    --blue:#2f6bff; --blue2:#49b6ff; --indigo:#6a5cff; --cyan:#53e2ff;
+    --text:#eef3ff; --muted:#9fb0d4; --dim:#7383a8;
+    --grad:linear-gradient(100deg,#1b3bff 0%,#2f6bff 42%,#49b6ff 100%);
+    --grad2:linear-gradient(120deg,#6a5cff 0%,#2f6bff 50%,#53e2ff 100%);
+    --radius:18px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    background:radial-gradient(1200px 700px at 80% -10%,#12285e 0%,transparent 60%),
-      radial-gradient(1000px 600px at -10% 10%,#0f2350 0%,transparent 55%),var(--navy);
-    color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
   a{color:inherit;text-decoration:none}
-  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
-  .grad-text{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .wrap{max-width:1150px;margin:0 auto;padding:0 24px}
+  .grad-text{background:var(--grad2);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* animated ambient background */
+  .bg-orbs{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+  .orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5}
+  .orb.a{width:620px;height:620px;background:#1b47c9;top:-220px;right:-120px;animation:float1 20s ease-in-out infinite}
+  .orb.b{width:520px;height:520px;background:#5a2fd6;top:280px;left:-200px;animation:float2 24s ease-in-out infinite}
+  .orb.c{width:460px;height:460px;background:#0f8fd6;bottom:-200px;right:10%;opacity:.35;animation:float1 28s ease-in-out infinite}
+  @keyframes float1{0%,100%{transform:translate(0,0)}50%{transform:translate(-40px,40px)}}
+  @keyframes float2{0%,100%{transform:translate(0,0)}50%{transform:translate(50px,-30px)}}
+  .grid-overlay{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.4;
+    background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:54px 54px;mask-image:radial-gradient(1000px 700px at 50% 0%,#000 0%,transparent 75%)}
 
   /* NAV */
-  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
-    background:rgba(10,22,51,.72);border-bottom:1px solid var(--line)}
-  nav .wrap{display:flex;align-items:center;gap:14px;height:66px}
+  nav{position:sticky;top:0;z-index:60;backdrop-filter:blur(14px);
+    background:rgba(7,13,31,.72);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:14px;height:68px}
   .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:20px}
-  .brand img{width:34px;height:34px;border-radius:8px}
-  .brand .t{letter-spacing:.2px}
-  nav .links{margin-left:auto;display:flex;gap:26px;align-items:center}
-  nav .links a{color:var(--muted);font-size:15px;font-weight:500}
+  .brand img{width:34px;height:34px;border-radius:9px;box-shadow:0 4px 14px rgba(47,107,255,.4)}
+  nav .links{margin-left:auto;display:flex;gap:28px;align-items:center}
+  nav .links a{color:var(--muted);font-size:15px;font-weight:500;transition:.15s}
   nav .links a:hover{color:var(--text)}
-  .nav-powered{font-size:12px;color:var(--muted);white-space:nowrap}
-  .nav-powered b{color:var(--text);font-weight:600}
-  .btn{display:inline-flex;align-items:center;gap:8px;border:none;cursor:pointer;
-    font:inherit;font-weight:600;padding:11px 20px;border-radius:11px;transition:.16s}
-  .btn.primary{background:var(--grad);color:#fff;box-shadow:0 6px 22px rgba(47,107,255,.35)}
-  .btn.primary:hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(47,107,255,.5)}
-  .btn.ghost{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--line)}
+  .nav-powered{font-size:12px;color:var(--dim);white-space:nowrap}
+  .nav-powered b{color:var(--muted);font-weight:600}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;border:none;cursor:pointer;
+    font:inherit;font-weight:700;padding:12px 22px;border-radius:12px;transition:.18s;white-space:nowrap}
+  .btn.primary{background:var(--grad);color:#fff;box-shadow:0 8px 24px rgba(47,107,255,.4)}
+  .btn.primary:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(47,107,255,.55)}
+  .btn.ghost{background:rgba(255,255,255,.06);color:var(--text);border:1px solid var(--line2)}
   .btn.ghost:hover{background:rgba(255,255,255,.12)}
+  .btn.lg{padding:15px 28px;font-size:16px}
 
   /* HERO */
-  header.hero{padding:78px 0 40px}
-  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center}
-  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;
-    color:var(--blue2);background:rgba(70,180,255,.1);border:1px solid rgba(70,180,255,.25);
-    padding:6px 13px;border-radius:999px;margin-bottom:22px}
-  h1{font-size:56px;line-height:1.05;font-weight:800;letter-spacing:-1px}
-  .hero p.sub{font-size:19px;color:var(--muted);margin:20px 0 30px;max-width:520px}
+  header.hero{padding:70px 0 30px;position:relative}
+  .hero-grid{display:grid;grid-template-columns:1.06fr .94fr;gap:52px;align-items:center}
+  .eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;
+    color:#cfe4ff;background:rgba(73,182,255,.1);border:1px solid rgba(73,182,255,.28);
+    padding:7px 14px;border-radius:999px;margin-bottom:24px}
+  .eyebrow .nw{background:var(--grad);color:#fff;font-weight:800;font-size:11px;padding:2px 8px;border-radius:999px;letter-spacing:.03em}
+  h1{font-size:62px;line-height:1.03;font-weight:900;letter-spacing:-1.6px}
+  .hero p.sub{font-size:19px;color:var(--muted);margin:22px 0 32px;max-width:540px}
   .cta-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
-  .cta-note{font-size:13px;color:var(--muted);margin-top:16px}
-  .cta-note b{color:var(--text)}
+  .cta-note{font-size:13.5px;color:var(--dim);margin-top:18px}
+  .cta-note b{color:var(--muted)}
 
   /* HERO DEMO CARD */
-  .demo{background:linear-gradient(180deg,#0c1c44,#0a1838);border:1px solid var(--line);
-    border-radius:var(--radius);box-shadow:0 30px 80px rgba(0,0,0,.45);overflow:hidden}
-  .demo .bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);
+  .demo{position:relative;background:linear-gradient(180deg,rgba(18,32,70,.9),rgba(9,18,44,.9));
+    border:1px solid var(--line2);border-radius:var(--radius);box-shadow:0 40px 90px rgba(0,0,0,.5);overflow:hidden}
+  .demo:before{content:"";position:absolute;inset:0;border-radius:var(--radius);padding:1px;
+    background:var(--grad2);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;opacity:.5;pointer-events:none}
+  .demo .bar{display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid var(--line);
     background:rgba(255,255,255,.03)}
   .dot{width:11px;height:11px;border-radius:50%}
-  .demo .bar .title{margin-left:8px;font-size:13px;color:var(--muted)}
-  .demo .body{padding:18px}
-  .demo label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-  #demoField{width:100%;min-height:132px;margin-top:8px;background:#071331;border:1px solid var(--line);
-    color:var(--text);border-radius:12px;padding:14px;font-size:15px;resize:vertical;line-height:1.55;
-    font-family:inherit;outline:none}
-  #demoField:focus{border-color:var(--blue)}
+  .demo .bar .title{margin-left:10px;font-size:13px;color:var(--muted)}
+  .demo .body{padding:20px}
+  .demo label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
+  #demoField{width:100%;min-height:138px;margin-top:9px;background:#060f28;border:1px solid var(--line);
+    color:var(--text);border-radius:12px;padding:15px;font-size:15px;resize:vertical;line-height:1.55;
+    font-family:inherit;outline:none;transition:.15s}
+  #demoField:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,107,255,.2)}
   .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
-  .chip{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:rgba(47,107,255,.14);
-    border:1px solid rgba(47,107,255,.3);color:#bcd2ff;padding:5px 10px;border-radius:8px;cursor:pointer}
-  .chip:hover{background:rgba(47,107,255,.26)}
-  .demo .hint{font-size:12.5px;color:var(--muted);margin-top:12px}
-  .flash{color:var(--blue2);font-weight:600}
+  .chip{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;background:rgba(47,107,255,.15);
+    border:1px solid rgba(47,107,255,.32);color:#bcd2ff;padding:6px 11px;border-radius:8px;cursor:pointer;transition:.14s}
+  .chip:hover{background:rgba(47,107,255,.3);transform:translateY(-1px)}
+  .demo .hint{font-size:12.5px;color:var(--dim);margin-top:13px}
+  .flash{color:var(--blue2);font-weight:700}
 
   /* STATS */
-  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-top:54px}
-  .stat{flex:1;min-width:180px;background:rgba(255,255,255,.03);border:1px solid var(--line);
-    border-radius:14px;padding:20px 22px}
-  .stat .n{font-size:26px;font-weight:800}
-  .stat .l{color:var(--muted);font-size:14px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:58px}
+  .stat{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+  .stat .n{font-size:22px;font-weight:800}
+  .stat .l{color:var(--muted);font-size:13.5px;margin-top:3px}
 
   /* SECTION */
-  section{padding:70px 0;scroll-margin-top:80px}
-  .sec-head{text-align:center;max-width:640px;margin:0 auto 46px}
-  .sec-head h2{font-size:38px;font-weight:800;letter-spacing:-.5px}
-  .sec-head p{color:var(--muted);font-size:17px;margin-top:12px}
+  section{padding:84px 0;scroll-margin-top:80px;position:relative}
+  .sec-head{text-align:center;max-width:660px;margin:0 auto 50px}
+  .kicker{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--blue2);margin-bottom:12px}
+  .sec-head h2{font-size:42px;font-weight:800;letter-spacing:-.8px}
+  .sec-head p{color:var(--muted);font-size:17px;margin-top:14px}
 
   /* FEATURES */
   .features{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-  .card{background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.02));
-    border:1px solid var(--line);border-radius:var(--radius);padding:26px}
-  .card .ic{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;
-    background:var(--grad);font-size:22px;margin-bottom:16px}
-  .card h3{font-size:18px;margin-bottom:8px}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+    border:1px solid var(--line);border-radius:var(--radius);padding:28px;transition:.2s}
+  .card:hover{transform:translateY(-4px);border-color:var(--line2);box-shadow:0 20px 50px rgba(0,0,0,.4)}
+  .card .ic{width:50px;height:50px;border-radius:14px;display:grid;place-items:center;
+    background:var(--grad);margin-bottom:18px;box-shadow:0 10px 24px rgba(47,107,255,.35)}
+  .card .ic svg{width:25px;height:25px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .card h3{font-size:18.5px;margin-bottom:9px}
   .card p{color:var(--muted);font-size:14.5px}
 
   /* TEAM */
-  .team{background:linear-gradient(180deg,#0b1a40,#0a1533);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .team{background:linear-gradient(180deg,rgba(13,26,64,.6),rgba(8,16,40,.3));border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:14px}
-  .step{position:relative;background:rgba(255,255,255,.03);border:1px solid var(--line);
-    border-radius:var(--radius);padding:26px 24px}
-  .step .num{width:34px;height:34px;border-radius:10px;background:rgba(47,107,255,.18);
-    border:1px solid rgba(47,107,255,.4);color:#bcd2ff;font-weight:800;display:grid;place-items:center;margin-bottom:14px}
-  .step h3{font-size:17px;margin-bottom:7px}
+  .step{position:relative;background:rgba(255,255,255,.035);border:1px solid var(--line);
+    border-radius:var(--radius);padding:28px 26px}
+  .step .num{width:36px;height:36px;border-radius:11px;background:rgba(47,107,255,.2);
+    border:1px solid rgba(47,107,255,.42);color:#bcd2ff;font-weight:800;display:grid;place-items:center;margin-bottom:16px}
+  .step h3{font-size:17.5px;margin-bottom:8px}
   .step p{color:var(--muted);font-size:14.5px}
-  .arrow-flow{display:flex;justify-content:center;gap:10px;color:var(--muted);margin-top:26px;font-size:14px;flex-wrap:wrap}
+  .arrow-flow{display:flex;justify-content:center;gap:10px;color:var(--muted);margin-top:30px;font-size:14.5px;flex-wrap:wrap}
   .arrow-flow b{color:var(--text)}
 
   /* PHONE SHOWCASE */
-  .showcase{background:linear-gradient(180deg,#0b1a40,#0a1533);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-  .show-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;align-items:center}
+  .showcase{background:linear-gradient(180deg,rgba(13,26,64,.5),rgba(8,16,40,.2));border-bottom:1px solid var(--line)}
+  .show-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:60px;align-items:center}
   .phone-wrap{position:relative;display:flex;justify-content:center}
-  .phone-wrap:before{content:"";position:absolute;width:340px;height:340px;border-radius:50%;
-    background:radial-gradient(circle,rgba(47,107,255,.4),transparent 62%);filter:blur(12px);top:40px;z-index:0}
-  .phone-frame{position:relative;z-index:1;width:300px;border-radius:34px;padding:10px;
-    background:linear-gradient(160deg,#1a2650,#0d1535);border:1px solid #2b3a68;
-    box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.04)}
-  .phone-frame img{width:100%;border-radius:26px;display:block}
-  .show-points{display:flex;flex-direction:column;gap:22px}
-  .show-point{display:flex;gap:15px;align-items:flex-start}
-  .show-point .pic{flex:none;width:44px;height:44px;border-radius:13px;background:var(--grad);
-    display:grid;place-items:center;font-size:20px;box-shadow:0 8px 20px rgba(47,107,255,.35)}
-  .show-point h3{font-size:17px;margin-bottom:4px}
+  .phone-wrap:before{content:"";position:absolute;width:360px;height:360px;border-radius:50%;
+    background:radial-gradient(circle,rgba(47,107,255,.45),transparent 62%);filter:blur(14px);top:40px;z-index:0}
+  .phone-frame{position:relative;z-index:1;width:300px;border-radius:38px;padding:11px;
+    background:linear-gradient(160deg,#1c2a56,#0c1430);border:1px solid #2b3a68;
+    box-shadow:0 50px 100px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.05)}
+  .phone-frame img{width:100%;border-radius:28px;display:block}
+  .show-points{display:flex;flex-direction:column;gap:24px}
+  .show-point{display:flex;gap:16px;align-items:flex-start}
+  .show-point .pic{flex:none;width:48px;height:48px;border-radius:14px;background:var(--grad);
+    display:grid;place-items:center;box-shadow:0 10px 24px rgba(47,107,255,.35)}
+  .show-point .pic svg{width:23px;height:23px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .show-point h3{font-size:17.5px;margin-bottom:5px}
   .show-point p{color:var(--muted);font-size:14.5px}
-  @media(max-width:900px){.show-grid{grid-template-columns:1fr;gap:36px;justify-items:center}
-    .show-points{max-width:420px}}
+
+  /* PRICING */
+  .pricing{position:relative}
+  .toggle-wrap{display:flex;justify-content:center;align-items:center;gap:14px;margin-bottom:40px}
+  .toggle-lab{font-size:15px;font-weight:600;color:var(--muted);transition:.15s}
+  .toggle-lab.on{color:var(--text)}
+  .save-pill{background:rgba(53,224,138,.14);border:1px solid rgba(53,224,138,.34);color:#6ff0ad;
+    font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;margin-left:4px}
+  .switch{position:relative;width:58px;height:32px;border-radius:999px;background:rgba(255,255,255,.12);
+    border:1px solid var(--line2);cursor:pointer;transition:.2s;flex:none}
+  .switch.on{background:var(--grad)}
+  .switch .knob{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:.22s;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+  .switch.on .knob{left:30px}
+  .price-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;max-width:820px;margin:0 auto}
+  .price-card{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+    border:1px solid var(--line);border-radius:22px;padding:34px 30px;display:flex;flex-direction:column}
+  .price-card.featured{border-color:transparent;background:linear-gradient(180deg,rgba(26,46,110,.6),rgba(12,22,54,.6))}
+  .price-card.featured:before{content:"";position:absolute;inset:0;border-radius:22px;padding:1.5px;
+    background:var(--grad2);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+  .price-card .tag{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:var(--grad);
+    color:#fff;font-size:12px;font-weight:800;letter-spacing:.04em;padding:6px 16px;border-radius:999px;box-shadow:0 8px 20px rgba(47,107,255,.5)}
+  .price-card h3{font-size:16px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+  .price-amt{display:flex;align-items:baseline;gap:4px;margin:14px 0 4px}
+  .price-amt .cur{font-size:26px;font-weight:800}
+  .price-amt .num{font-size:52px;font-weight:900;letter-spacing:-2px;line-height:1}
+  .price-amt .per{font-size:15px;color:var(--muted);font-weight:600}
+  .price-sub{font-size:13.5px;color:var(--dim);min-height:20px}
+  .plist{list-style:none;margin:24px 0 26px;display:flex;flex-direction:column;gap:13px;flex:1}
+  .plist li{display:flex;gap:11px;align-items:flex-start;font-size:14.5px;color:#d3ddf4}
+  .plist li svg{flex:none;width:20px;height:20px;margin-top:1px;stroke:var(--blue2);fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+  .plist li.off{color:var(--dim)}
+  .plist li.off svg{stroke:var(--dim)}
+  .price-card .btn{width:100%}
+  .pay-note{text-align:center;color:var(--dim);font-size:13px;margin-top:26px}
+
+  /* FAQ */
+  .faq{max-width:780px;margin:0 auto;display:grid;gap:12px}
+  details{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:14px;padding:4px 22px;transition:.16s}
+  details[open]{background:rgba(255,255,255,.055)}
+  summary{cursor:pointer;list-style:none;font-weight:700;font-size:16.5px;padding:18px 0;position:relative;padding-right:32px}
+  summary::-webkit-details-marker{display:none}
+  summary:after{content:"+";position:absolute;right:2px;top:15px;font-size:24px;color:var(--blue2);font-weight:300;transition:.2s}
+  details[open] summary:after{transform:rotate(45deg)}
+  details p{color:var(--muted);font-size:15px;padding:0 0 20px}
 
   /* DOWNLOAD */
-  .download .box{background:var(--grad);border-radius:24px;padding:52px;text-align:center;
-    box-shadow:0 30px 80px rgba(47,107,255,.35)}
-  .download h2{font-size:36px;font-weight:800;color:#fff}
-  .download p{color:rgba(255,255,255,.9);margin:12px auto 26px;max-width:520px;font-size:17px}
-  .dl-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
-  .btn.os{background:#fff;color:#12275e;font-size:16px;padding:14px 26px}
-  .btn.os:hover{transform:translateY(-1px)}
-  .btn.share{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4)}
-  .dl-note{color:rgba(255,255,255,.85);font-size:13px;margin-top:18px}
+  .download .box{position:relative;background:var(--grad);border-radius:28px;padding:56px;text-align:center;
+    box-shadow:0 40px 90px rgba(47,107,255,.4);overflow:hidden}
+  .download .box:after{content:"";position:absolute;width:400px;height:400px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,255,255,.18),transparent 65%);top:-160px;right:-80px}
+  .download h2{font-size:40px;font-weight:900;color:#fff;position:relative;letter-spacing:-1px}
+  .download p{color:rgba(255,255,255,.92);margin:14px auto 28px;max-width:540px;font-size:17px;position:relative}
+  .dl-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;position:relative}
+  .btn.os{background:#fff;color:#11245a;font-size:16px;padding:15px 26px}
+  .btn.os:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(0,0,0,.3)}
+  .btn.share{background:rgba(255,255,255,.18);color:#fff;border:1px solid rgba(255,255,255,.45)}
+  .btn.share:hover{background:rgba(255,255,255,.28)}
+  .dl-note{color:rgba(255,255,255,.9);font-size:13.5px;margin-top:20px;position:relative}
 
   /* FOOTER */
-  footer{padding:40px 0 60px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+  footer{padding:44px 0 64px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
   footer .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   footer .brand{font-size:16px}
-  footer .sp{margin-left:auto}
+  footer .fl{margin-left:auto;display:flex;gap:22px}
+  footer .fl a:hover{color:var(--text)}
 
-  @media(max-width:900px){
-    .hero-grid{grid-template-columns:1fr;gap:34px}
-    h1{font-size:42px}
+  /* reveal on scroll */
+  .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease}
+  .reveal.in{opacity:1;transform:none}
+
+  @media(max-width:980px){
+    .hero-grid{grid-template-columns:1fr;gap:38px}
+    h1{font-size:46px}
     .features,.steps{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .show-grid{grid-template-columns:1fr;gap:40px;justify-items:center}
+    .show-points{max-width:440px}
     nav .links a:not(.navcta){display:none}
     .nav-powered{display:none}
-    .download .box{padding:36px 22px}
+  }
+  @media(max-width:620px){
+    h1{font-size:38px;letter-spacing:-1px}
+    .sec-head h2{font-size:31px}
+    section{padding:62px 0}
+    .price-grid{grid-template-columns:1fr;max-width:420px}
+    .download .box{padding:38px 22px}
+    .download h2{font-size:31px}
+    .wrap{padding:0 16px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    .orb{animation:none}.reveal{transition:none;opacity:1;transform:none}
+    html{scroll-behavior:auto}
   }
 </style>
 </head>
-<body>
+<body id="top">
+
+<div class="bg-orbs"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+<div class="grid-overlay"></div>
 
 <nav>
   <div class="wrap">
-    <a class="brand" href="#top"><img src="/icon.png" alt="Trexpanda logo" /><span class="t grad-text">Trexpanda</span></a>
+    <a class="brand" href="#top"><img src="/icon.png" alt="Trexpanda logo" /><span class="grad-text">Trexpanda</span></a>
     <span class="nav-powered">Powered by <b>Lumisha LLC</b></span>
     <div class="links">
       <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
       <a href="#phone">Phone</a>
-      <a href="#team">Team sharing</a>
-      <a href="#download">Download</a>
+      <a href="/help.html">Help</a>
       <a href="#download" class="btn primary navcta">Get Trexpanda</a>
     </div>
   </div>
 </nav>
 
-<a id="top"></a>
 <header class="hero">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow">⌨️ Type Less. Do More.</span>
+      <span class="eyebrow"><span class="nw">NEW</span> Shortcuts now work in any keyboard</span>
       <h1>Your snippets,<br><span class="grad-text">everywhere, in real time.</span></h1>
-      <p class="sub">Trexpanda turns short triggers into full text in any app. Write a snippet once and it syncs live across your computer and your phone — type <b>;addr</b> and get the same perfect result on Windows, macOS, and Android.</p>
+      <p class="sub">Trexpanda turns short shortcuts into full text in any app. Write a snippet once and it syncs live across your computer and your phone. Type <b>;addr</b> and get the same perfect result on Windows, macOS, and Android.</p>
       <div class="cta-row">
-        <a href="#download" class="btn primary">⬇ Download free (beta)</a>
-        <a href="#demo" class="btn ghost">Try it live ↓</a>
+        <a href="#download" class="btn primary lg">Get Trexpanda free</a>
+        <a href="#demo" class="btn ghost lg">Try it live</a>
       </div>
-      <div class="cta-note">Free during beta · Windows, macOS &amp; Android · <b>changes sync live</b></div>
+      <div class="cta-note">Free for 30 days, no card needed. Then Pro from <b>$3/month</b>.</div>
     </div>
 
-    <div class="demo" id="demo">
+    <div class="demo reveal" id="demo">
       <div class="bar">
         <span class="dot" style="background:#ff5f57"></span>
         <span class="dot" style="background:#febc2e"></span>
         <span class="dot" style="background:#28c840"></span>
-        <span class="title">Try typing a trigger — it expands as you go</span>
+        <span class="title">Type a shortcut, watch it expand</span>
       </div>
       <div class="body">
         <label>Type here</label>
-        <textarea id="demoField" spellcheck="false" placeholder="Type one of the triggers below, e.g.  ;addr  then a space…"></textarea>
+        <textarea id="demoField" spellcheck="false" placeholder="Type one of the shortcuts below, for example  ;addr  then a space"></textarea>
         <div class="chips" id="chips"></div>
-        <div class="hint">Click a chip to insert it, or type it yourself. <span id="flash" class="flash"></span></div>
+        <div class="hint">Click a chip to insert it, or type it yourself. Case does not matter. <span id="flash" class="flash"></span></div>
       </div>
     </div>
   </div>
 
   <div class="wrap">
-    <div class="stats">
-      <div class="stat"><div class="n grad-text">Real-time</div><div class="l">Edits appear on every device in a moment</div></div>
-      <div class="stat"><div class="n grad-text">Every app</div><div class="l">Email, chat, docs, browsers, forms — anywhere you type</div></div>
-      <div class="stat"><div class="n grad-text">3 platforms</div><div class="l">Windows, macOS &amp; an Android keyboard</div></div>
-      <div class="stat"><div class="n grad-text">Your phone</div><div class="l">A custom keyboard that expands snippets on the go</div></div>
+    <div class="stats reveal">
+      <div class="stat"><div class="n grad-text">Real time</div><div class="l">Edits appear on every device in a moment</div></div>
+      <div class="stat"><div class="n grad-text">Every app</div><div class="l">Email, chat, docs, browsers and forms</div></div>
+      <div class="stat"><div class="n grad-text">3 platforms</div><div class="l">Windows, macOS and an Android keyboard</div></div>
+      <div class="stat"><div class="n grad-text">Any keyboard</div><div class="l">Expand inside Gboard and more on Android</div></div>
     </div>
   </div>
 </header>
@@ -214,17 +309,18 @@
 <!-- FEATURES -->
 <section id="features">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
+      <div class="kicker">Features</div>
       <h2>Everything a fast typist needs</h2>
-      <p>Stop retyping the same addresses, replies, and boilerplate. Trexpanda remembers them — and keeps them in sync on every device, instantly.</p>
+      <p>Stop retyping the same addresses, replies, and boilerplate. Trexpanda remembers them, and keeps them in sync on every device, instantly.</p>
     </div>
     <div class="features">
-      <div class="card"><div class="ic">⚡</div><h3>Instant expansion</h3><p>Type a short trigger like <b>;sig</b> and it becomes your full signature the moment you finish typing — no menus, no copy-paste.</p></div>
-      <div class="card"><div class="ic">🔄</div><h3>Real-time sync</h3><p>Add or edit a snippet on your computer and it appears on your phone within moments — and the other way around. No manual refresh, ever.</p></div>
-      <div class="card"><div class="ic">📱</div><h3>On your phone</h3><p>A dedicated Trexpanda keyboard for Android expands your snippets in any app, with live suggestions as you start typing a trigger.</p></div>
-      <div class="card"><div class="ic">🌐</div><h3>Works everywhere</h3><p>Gmail, Outlook, Slack, Word, your CRM, any web form. If you can type into it, Trexpanda expands into it.</p></div>
-      <div class="card"><div class="ic">🧩</div><h3>Smart tokens</h3><p>Drop in <b>{date}</b>, <b>{time}</b>, or a cursor marker so your snippets fill themselves in and land your cursor exactly where you want.</p></div>
-      <div class="card"><div class="ic">👥</div><h3>Share with your team</h3><p>Build a shared library once and your whole team gets the same shortcuts. Update it, and everyone syncs automatically.</p></div>
+      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg></div><h3>Instant expansion</h3><p>Type a short shortcut like <b>;sig</b> and it becomes your full signature the moment you finish typing. No menus, no copy and paste.</p></div>
+      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.7-4.4"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.7 4.4"/><path d="M21 3v5h-5"/><path d="M3 21v-5h5"/></svg></div><h3>Real-time sync</h3><p>Add or edit a snippet on your computer and it appears on your phone within moments, and the other way around. No manual refresh, ever.</p></div>
+      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div><h3>On your phone</h3><p>A dedicated Trexpanda keyboard for Android expands your snippets in any app, with live suggestions as you start typing a shortcut.</p></div>
+      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg></div><h3>Works everywhere</h3><p>Gmail, Outlook, Slack, Word, your CRM, any web form. If you can type into it, Trexpanda expands into it.</p></div>
+      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24"><path d="M8 3H6a2 2 0 0 0-2 2v2"/><path d="M16 3h2a2 2 0 0 1 2 2v2"/><path d="M8 21H6a2 2 0 0 1-2-2v-2"/><path d="M16 21h2a2 2 0 0 0 2-2v-2"/><path d="M9 12h6"/></svg></div><h3>Smart tokens</h3><p>Drop in <b>{date}</b>, <b>{time}</b>, or a cursor marker so your snippets fill themselves in and land your cursor exactly where you want.</p></div>
+      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></svg></div><h3>Share with your team</h3><p>Build a shared library once and your whole team gets the same shortcuts. Update it, and everyone syncs automatically.</p></div>
     </div>
   </div>
 </section>
@@ -232,38 +328,106 @@
 <!-- PHONE SHOWCASE -->
 <section id="phone" class="showcase">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
+      <div class="kicker">On mobile</div>
       <h2>Beautiful on your phone</h2>
       <p>The Trexpanda Android app and keyboard: sign in once, and every snippet from your computer is right there, updated live as you edit.</p>
     </div>
     <div class="show-grid">
-      <div class="phone-wrap">
+      <div class="phone-wrap reveal">
         <div class="phone-frame"><img src="/app-preview.png" alt="Trexpanda Android app home screen" /></div>
       </div>
-      <div class="show-points">
-        <div class="show-point"><div class="pic">🔐</div><div><h3>Sign in with Google</h3><p>One tap to connect. Your personal snippet library follows you to your phone, securely.</p></div></div>
-        <div class="show-point"><div class="pic">⚡</div><div><h3>A keyboard that expands</h3><p>Switch to the Trexpanda keyboard and your triggers expand in any app, with live suggestions as you type.</p></div></div>
-        <div class="show-point"><div class="pic">🔄</div><div><h3>Live across devices</h3><p>Add a snippet on your computer and the green <b>Live</b> badge lights up as it lands on your phone in moments.</p></div></div>
-        <div class="show-point"><div class="pic">✨</div><div><h3>Clean, focused design</h3><p>No clutter. Just your snippets, your keyboard setup, and one button to add more.</p></div></div>
+      <div class="show-points reveal">
+        <div class="show-point"><div class="pic"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><h3>Sign in with Google</h3><p>One tap to connect. Your personal snippet library follows you to your phone, securely.</p></div></div>
+        <div class="show-point"><div class="pic"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg></div><div><h3>A keyboard that expands</h3><p>Type on the Trexpanda keyboard, or turn on any-keyboard mode and expand inside Gboard and others with no switching.</p></div></div>
+        <div class="show-point"><div class="pic"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-7.7-4.4"/><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 7.7 4.4"/><path d="M21 3v5h-5"/></svg></div><div><h3>Live across devices</h3><p>Add a snippet on your computer and the green <b>Live</b> badge lights up as it lands on your phone in moments.</p></div></div>
+        <div class="show-point"><div class="pic"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></div><div><h3>Clean, focused design</h3><p>No clutter. Just your snippets, your keyboard setup, and one button to add more.</p></div></div>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" class="pricing">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">Pricing</div>
+      <h2>Simple pricing, no surprises</h2>
+      <p>Start with a full 30-day free trial, no card required. Keep everything for the price of a coffee a month.</p>
+    </div>
+
+    <div class="toggle-wrap reveal">
+      <span class="toggle-lab on" id="labMonthly">Monthly</span>
+      <div class="switch" id="billingSwitch" role="switch" aria-label="Toggle yearly billing"><div class="knob"></div></div>
+      <span class="toggle-lab" id="labYearly">Yearly <span class="save-pill">Save 2 months</span></span>
+    </div>
+
+    <div class="price-grid">
+      <div class="price-card reveal">
+        <h3>Free trial</h3>
+        <div class="price-amt"><span class="cur">$</span><span class="num">0</span><span class="per">for 30 days</span></div>
+        <div class="price-sub">No card needed to start.</div>
+        <ul class="plist">
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Unlimited snippets and shortcuts</li>
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Live sync across all your devices</li>
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>The Android keyboard and any-keyboard mode</li>
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Smart tokens and team sharing</li>
+          <li class="off"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>CSV export and backups (Pro only)</li>
+        </ul>
+        <a href="#download" class="btn ghost">Start free</a>
+      </div>
+
+      <div class="price-card featured reveal">
+        <div class="tag">MOST POPULAR</div>
+        <h3>Pro</h3>
+        <div class="price-amt"><span class="cur">$</span><span class="num" id="priceNum">3</span><span class="per" id="pricePer">/month</span></div>
+        <div class="price-sub" id="priceSub">Billed monthly. Cancel anytime.</div>
+        <ul class="plist">
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Everything in the free trial, forever</li>
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>CSV export and backups</li>
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Unlimited devices, all platforms</li>
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Priority support from the team</li>
+          <li><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Every future update included</li>
+        </ul>
+        <button class="btn primary" id="subscribeBtn">Get Pro</button>
+      </div>
+    </div>
+    <div class="pay-note">Payments are handled securely by Stripe. Cancel anytime. Questions? <a href="mailto:hello@trexpanda.com" style="color:var(--blue2)">hello@trexpanda.com</a></div>
   </div>
 </section>
 
 <!-- TEAM SHARING -->
 <section id="team" class="team">
   <div class="wrap">
-    <div class="sec-head">
+    <div class="sec-head reveal">
+      <div class="kicker">For teams</div>
       <h2>Share once. Everyone benefits.</h2>
-      <p>The whole point of Trexpanda: the great snippets your teammates write become yours too — automatically.</p>
+      <p>The whole point of Trexpanda: the great snippets your teammates write become yours too, automatically.</p>
     </div>
     <div class="steps">
-      <div class="step"><div class="num">1</div><h3>One person sets up the library</h3><p>A teammate points Trexpanda at a shared folder (Google&nbsp;Drive, Dropbox, OneDrive) or a link, and publishes the starter snippets.</p></div>
-      <div class="step"><div class="num">2</div><h3>Invite the team</h3><p>Send them the installer and the same library location. They paste it into Settings once — that's the whole setup.</p></div>
-      <div class="step"><div class="num">3</div><h3>Everyone stays in sync</h3><p>When anyone adds or improves a snippet, it flows to the shared library and every teammate picks it up on their next sync.</p></div>
+      <div class="step reveal"><div class="num">1</div><h3>One person sets up the library</h3><p>A teammate points Trexpanda at a shared folder (Google&nbsp;Drive, Dropbox, OneDrive) or a link, and publishes the starter snippets.</p></div>
+      <div class="step reveal"><div class="num">2</div><h3>Invite the team</h3><p>Send them the installer and the same library location. They paste it into Settings once, and that's the whole setup.</p></div>
+      <div class="step reveal"><div class="num">3</div><h3>Everyone stays in sync</h3><p>When anyone adds or improves a snippet, it flows to the shared library and every teammate picks it up on their next sync.</p></div>
     </div>
-    <div class="arrow-flow">
+    <div class="arrow-flow reveal">
       <b>You write</b> <span>→</span> shared library <span>→</span> <b>your whole team types it</b> &nbsp;·&nbsp; and their snippets flow back to you the same way.
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">FAQ</div>
+      <h2>Good questions</h2>
+    </div>
+    <div class="faq reveal">
+      <details><summary>What is a text expander?</summary><p>It types your long, repeated text for you. You set up a short shortcut once, like <b>;addr</b> for your address, and whenever you type it, Trexpanda replaces it with the full text. You can read the full walkthrough on the <a href="/help.html" style="color:var(--blue2)">help page</a>.</p></details>
+      <details><summary>Which devices does it work on?</summary><p>Windows and macOS on the computer, and Android on the phone through the Trexpanda keyboard. On Android you can also turn on any-keyboard mode, so shortcuts expand inside Gboard or any other keyboard. An iPhone version is on the way.</p></details>
+      <details><summary>What happens after the free trial?</summary><p>You get 30 days with everything, no card needed. After that, Pro keeps it all going for $3 a month or $30 a year. Your snippets are never deleted, and you can subscribe whenever you are ready.</p></details>
+      <details><summary>Can I cancel anytime?</summary><p>Yes. Billing is handled by Stripe and you can cancel whenever you like. You keep Pro until the end of the period you already paid for.</p></details>
+      <details><summary>Is my data private?</summary><p>Your snippets are tied to your own account and are only there to sync between your devices. Full details are on the <a href="/privacy.html" style="color:var(--blue2)">privacy page</a>.</p></details>
     </div>
   </div>
 </section>
@@ -271,16 +435,16 @@
 <!-- DOWNLOAD -->
 <section id="download" class="download">
   <div class="wrap">
-    <div class="box">
+    <div class="box reveal">
       <h2>Get Trexpanda</h2>
       <p>Install it on your computer and your phone, sign in once, and your snippets stay in sync in real time.</p>
       <div class="dl-row">
-        <a href="/trexpanda-latest.apk" download class="btn os" id="dlAndroid">🤖&nbsp; Download for Android (APK)</a>
-        <a href="#" class="btn os" id="dlWin">⊞&nbsp; Windows</a>
-        <a href="#" class="btn os" id="dlMac"> macOS</a>
-        <button class="btn os share" id="shareBtn">🔗 Share with a friend</button>
+        <a href="/trexpanda-latest.apk" download class="btn os" id="dlAndroid">Download for Android (APK)</a>
+        <a href="#" class="btn os" id="dlWin">Windows</a>
+        <a href="#" class="btn os" id="dlMac">macOS</a>
+        <button class="btn os share" id="shareBtn">Share with a friend</button>
       </div>
-      <div class="dl-note" id="dlNote">Free during beta · Windows, macOS &amp; Android · always the latest version.</div>
+      <div class="dl-note" id="dlNote">Android app available now (v0.2.0, signed). Windows and macOS coming soon.</div>
     </div>
   </div>
 </section>
@@ -289,31 +453,74 @@
   <div class="wrap">
     <a class="brand" href="#top"><img src="/icon.png" alt="" style="width:24px;height:24px;border-radius:6px" /><span class="grad-text">Trexpanda</span></a>
     <span>· Type Less. Do More.</span>
-    <span class="sp">© 2026 Trexpanda · Free during beta</span>
-    <span style="flex-basis:100%;text-align:center;margin-top:8px;color:var(--muted)">Powered by <b style="color:var(--text)">Lumisha LLC</b></span>
+    <div class="fl">
+      <a href="#pricing">Pricing</a>
+      <a href="/help.html">Help</a>
+      <a href="/privacy.html">Privacy</a>
+      <a href="mailto:hello@trexpanda.com">Contact</a>
+    </div>
   </div>
+  <div class="wrap" style="margin-top:14px;color:var(--dim)">© 2026 Trexpanda · Powered by <b style="color:var(--muted)">Lumisha LLC</b></div>
 </footer>
 
 <script>
+  /* =======================================================================
+     STRIPE PAYMENT LINKS.  Paste your two buy.stripe.com links here.
+     Create them in your Stripe dashboard (Payment Links), one for the $3
+     monthly price and one for the $30 yearly price, then paste the full
+     URLs below. Until they are set, the Get Pro button emails you instead.
+     ======================================================================= */
+  var STRIPE_LINKS = {
+    monthly: '',   // e.g. 'https://buy.stripe.com/xxxxxxxxxxxx'
+    yearly:  ''    // e.g. 'https://buy.stripe.com/yyyyyyyyyyyy'
+  };
+
+  // ---- Pricing toggle --------------------------------------------------
+  var yearly = false;
+  var sw = document.getElementById('billingSwitch');
+  var labM = document.getElementById('labMonthly'), labY = document.getElementById('labYearly');
+  var priceNum = document.getElementById('priceNum'), pricePer = document.getElementById('pricePer'), priceSub = document.getElementById('priceSub');
+
+  function renderPrice(){
+    if (yearly){
+      priceNum.textContent = '30'; pricePer.textContent = '/year';
+      priceSub.textContent = 'Just $2.50/month, billed yearly. Cancel anytime.';
+      sw.classList.add('on'); labY.classList.add('on'); labM.classList.remove('on');
+    } else {
+      priceNum.textContent = '3'; pricePer.textContent = '/month';
+      priceSub.textContent = 'Billed monthly. Cancel anytime.';
+      sw.classList.remove('on'); labM.classList.add('on'); labY.classList.remove('on');
+    }
+  }
+  sw.addEventListener('click', function(){ yearly = !yearly; renderPrice(); });
+  renderPrice();
+
+  document.getElementById('subscribeBtn').addEventListener('click', function(){
+    var url = yearly ? STRIPE_LINKS.yearly : STRIPE_LINKS.monthly;
+    if (/^https?:\/\//.test(url)) { window.location.href = url; }
+    else {
+      window.location.href = 'mailto:hello@trexpanda.com?subject=' +
+        encodeURIComponent('I want Trexpanda Pro (' + (yearly ? 'yearly' : 'monthly') + ')') +
+        '&body=' + encodeURIComponent('Hi, I would like to subscribe to Trexpanda Pro.');
+    }
+  });
+
   // ---- Live in-page expansion demo -------------------------------------
   var SNIPPETS = [
-    { trigger: ';addr',    replacement: 'Acme Corporation\n123 Market Street, Suite 400\nSan Francisco, CA 94103' },
-    { trigger: ';sig',     replacement: 'Best regards,\nAlex\nAcme Corporation' },
-    { trigger: ';ty',      replacement: 'Thanks so much for reaching out — happy to help!' },
+    { trigger: ';addr',    replacement: 'Your Company Name\n123 Example Street, Suite 400\nYour City, State ZIP' },
+    { trigger: ';sig',     replacement: 'Best regards,\nYour Name\nYour Company' },
+    { trigger: ';ty',      replacement: 'Thanks so much for reaching out, happy to help!' },
     { trigger: ';meet',    replacement: 'Looking forward to our meeting on {date}. I’ll send an invite shortly.' },
-    { trigger: ';ship',    replacement: 'Your order has shipped and should arrive within 3–5 business days. Tracking to follow.' }
+    { trigger: ';ship',    replacement: 'Your order has shipped and should arrive within 3 to 5 business days. Tracking to follow.' }
   ];
-
   function renderTokens(text){
     var d = new Date();
     var iso = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     return text.replace(/\{date\}/g, iso).replace(/\{time\}/g, d.toTimeString().slice(0,5));
   }
-
   var field = document.getElementById('demoField');
   var chips = document.getElementById('chips');
   var flash = document.getElementById('flash');
-
   SNIPPETS.forEach(function(s){
     var c = document.createElement('span');
     c.className = 'chip'; c.textContent = s.trigger;
@@ -324,20 +531,15 @@
     });
     chips.appendChild(c);
   });
-
   function handleInput(){
     var v = field.value;
+    var low = v.toLowerCase();              // case-insensitive, like the real app
     for (var i=0;i<SNIPPETS.length;i++){
-      var s = SNIPPETS[i];
-      // expand when the trigger is followed by a space or the field ends with it
-      var withSpace = s.trigger + ' ';
-      if (v.endsWith(withSpace)){
-        field.value = v.slice(0, v.length - withSpace.length) + renderTokens(s.replacement);
-        showFlash(s.trigger);
+      var withSpace = (SNIPPETS[i].trigger + ' ').toLowerCase();
+      if (low.endsWith(withSpace)){
+        field.value = v.slice(0, v.length - withSpace.length) + renderTokens(SNIPPETS[i].replacement);
+        showFlash(SNIPPETS[i].trigger);
         return;
-      }
-      if (v.endsWith(s.trigger) && v.length === s.trigger.length){
-        // allow bare trigger at very start too — but wait for space normally
       }
     }
   }
@@ -349,30 +551,16 @@
 
   // ---- Share button ----------------------------------------------------
   document.getElementById('shareBtn').addEventListener('click', function(){
-    var msg = 'Try Trexpanda — a text expander that keeps our team’s shortcuts in sync. Download: ' + location.href;
-    var done = function(){ var b=document.getElementById('shareBtn'); var o=b.textContent; b.textContent='✓ Invite copied!'; setTimeout(function(){b.textContent=o;},1800); };
+    var msg = 'Try Trexpanda, a text expander that keeps your shortcuts in sync across your computer and phone. ' + location.origin;
+    var done = function(){ var b=document.getElementById('shareBtn'); var o=b.textContent; b.textContent='Invite copied'; setTimeout(function(){b.textContent=o;},1800); };
+    if (navigator.share){ navigator.share({title:'Trexpanda', text:msg, url:location.origin}).catch(function(){}); return; }
     if (navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(msg).then(done, done); }
     else { done(); }
   });
 
-  // ---- Real downloads --------------------------------------------------
-  // Set your GitHub username here. The buttons then point at permanent
-  // "latest release" links that always serve your newest published build.
-  var GITHUB = { owner: 'smsaree3-svg', repo: 'trexpanda' };
-
+  // ---- Downloads -------------------------------------------------------
   (function wireDownloads(){
-    var win  = document.getElementById('dlWin');
-    var mac  = document.getElementById('dlMac');
-    var android = document.getElementById('dlAndroid');
-    var note = document.getElementById('dlNote');
-    var configured = !!GITHUB.owner;
-    var base = 'https://github.com/' + GITHUB.owner + '/' + GITHUB.repo;
-
-    // Android: direct signed APK download, always the latest build shipped here.
-    android.href = '/trexpanda-latest.apk';
-    note.innerHTML = 'Android APK available now (v0.1.0, signed) \u00b7 Windows & macOS coming soon';
-
-    // Desktop installers are not published yet: show a friendly note instead of a dead link.
+    var win = document.getElementById('dlWin'), mac = document.getElementById('dlMac'), note = document.getElementById('dlNote');
     [win, mac].forEach(function(el){
       el.addEventListener('click', function(e){
         e.preventDefault();
@@ -380,6 +568,16 @@
           'Tap the APK above, open it on your phone, and allow install from your browser if prompted.';
       });
     });
+  })();
+
+  // ---- Reveal on scroll ------------------------------------------------
+  (function(){
+    var els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) { els.forEach(function(e){e.classList.add('in');}); return; }
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if (en.isIntersecting){ en.target.classList.add('in'); io.unobserve(en.target); } });
+    }, { threshold:.12 });
+    els.forEach(function(e){ io.observe(e); });
   })();
 </script>
 </body>
