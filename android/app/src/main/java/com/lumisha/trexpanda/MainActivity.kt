@@ -40,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cloudSettingsButton: Button
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: SnippetAdapter
+    private lateinit var emptyState: View
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +68,7 @@ class MainActivity : AppCompatActivity() {
         cloudSettingsButton = findViewById(R.id.cloudSettingsButton)
         liveChip = findViewById(R.id.liveChip)
         recycler = findViewById(R.id.recycler)
+        emptyState = findViewById(R.id.emptyState)
 
         adapter = SnippetAdapter(
             onEdit = { showEditDialog(it) },
@@ -153,7 +155,9 @@ class MainActivity : AppCompatActivity() {
             signedIn -> "Signed in as ${auth.userEmail ?: "you"}"
             else -> "Not signed in"
         }
-        adapter.submit(store.getPersonal().sortedBy { it.trigger ?: "" })
+        val items = store.getPersonal().sortedBy { it.trigger ?: "" }
+        adapter.submit(items)
+        emptyState.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
     }
 
     // ---- cloud settings ------------------------------------------------------
