@@ -83,7 +83,7 @@
   .stat .l{color:var(--muted);font-size:14px}
 
   /* SECTION */
-  section{padding:70px 0}
+  section{padding:70px 0;scroll-margin-top:80px}
   .sec-head{text-align:center;max-width:640px;margin:0 auto 46px}
   .sec-head h2{font-size:38px;font-weight:800;letter-spacing:-.5px}
   .sec-head p{color:var(--muted);font-size:17px;margin-top:12px}
@@ -108,6 +108,25 @@
   .step p{color:var(--muted);font-size:14.5px}
   .arrow-flow{display:flex;justify-content:center;gap:10px;color:var(--muted);margin-top:26px;font-size:14px;flex-wrap:wrap}
   .arrow-flow b{color:var(--text)}
+
+  /* PHONE SHOWCASE */
+  .showcase{background:linear-gradient(180deg,#0b1a40,#0a1533);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .show-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;align-items:center}
+  .phone-wrap{position:relative;display:flex;justify-content:center}
+  .phone-wrap:before{content:"";position:absolute;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle,rgba(47,107,255,.4),transparent 62%);filter:blur(12px);top:40px;z-index:0}
+  .phone-frame{position:relative;z-index:1;width:300px;border-radius:34px;padding:10px;
+    background:linear-gradient(160deg,#1a2650,#0d1535);border:1px solid #2b3a68;
+    box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.04)}
+  .phone-frame img{width:100%;border-radius:26px;display:block}
+  .show-points{display:flex;flex-direction:column;gap:22px}
+  .show-point{display:flex;gap:15px;align-items:flex-start}
+  .show-point .pic{flex:none;width:44px;height:44px;border-radius:13px;background:var(--grad);
+    display:grid;place-items:center;font-size:20px;box-shadow:0 8px 20px rgba(47,107,255,.35)}
+  .show-point h3{font-size:17px;margin-bottom:4px}
+  .show-point p{color:var(--muted);font-size:14.5px}
+  @media(max-width:900px){.show-grid{grid-template-columns:1fr;gap:36px;justify-items:center}
+    .show-points{max-width:420px}}
 
   /* DOWNLOAD */
   .download .box{background:var(--grad);border-radius:24px;padding:52px;text-align:center;
@@ -144,6 +163,7 @@
     <span class="nav-powered">Powered by <b>Lumisha LLC</b></span>
     <div class="links">
       <a href="#features">Features</a>
+      <a href="#phone">Phone</a>
       <a href="#team">Team sharing</a>
       <a href="#download">Download</a>
       <a href="#download" class="btn primary navcta">Get Trexpanda</a>
@@ -205,6 +225,27 @@
       <div class="card"><div class="ic">🌐</div><h3>Works everywhere</h3><p>Gmail, Outlook, Slack, Word, your CRM, any web form. If you can type into it, Trexpanda expands into it.</p></div>
       <div class="card"><div class="ic">🧩</div><h3>Smart tokens</h3><p>Drop in <b>{date}</b>, <b>{time}</b>, or a cursor marker so your snippets fill themselves in and land your cursor exactly where you want.</p></div>
       <div class="card"><div class="ic">👥</div><h3>Share with your team</h3><p>Build a shared library once and your whole team gets the same shortcuts. Update it, and everyone syncs automatically.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PHONE SHOWCASE -->
+<section id="phone" class="showcase">
+  <div class="wrap">
+    <div class="sec-head">
+      <h2>Beautiful on your phone</h2>
+      <p>The Trexpanda Android app and keyboard: sign in once, and every snippet from your computer is right there, updated live as you edit.</p>
+    </div>
+    <div class="show-grid">
+      <div class="phone-wrap">
+        <div class="phone-frame"><img src="/app-preview.png" alt="Trexpanda Android app home screen" /></div>
+      </div>
+      <div class="show-points">
+        <div class="show-point"><div class="pic">🔐</div><div><h3>Sign in with Google</h3><p>One tap to connect. Your personal snippet library follows you to your phone, securely.</p></div></div>
+        <div class="show-point"><div class="pic">⚡</div><div><h3>A keyboard that expands</h3><p>Switch to the Trexpanda keyboard and your triggers expand in any app, with live suggestions as you type.</p></div></div>
+        <div class="show-point"><div class="pic">🔄</div><div><h3>Live across devices</h3><p>Add a snippet on your computer and the green <b>Live</b> badge lights up as it lands on your phone in moments.</p></div></div>
+        <div class="show-point"><div class="pic">✨</div><div><h3>Clean, focused design</h3><p>No clutter. Just your snippets, your keyboard setup, and one button to add more.</p></div></div>
+      </div>
     </div>
   </div>
 </section>
