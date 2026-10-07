@@ -1,11 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#0F1420</color>
-    <color name="surface">#171D2B</color>
-    <color name="surfaceAccent">#2A3346</color>
-    <color name="text">#E6EBF5</color>
-    <color name="muted">#8A94A8</color>
-    <color name="brand">#4CC9A3</color>
-    <color name="danger">#E0556B</color>
-    <color name="ic_launcher_background">#0F1420</color>
+    <!-- Brand (navy + blue, cohesive with trexpanda.com) -->
+    <color name="bg">#0A1024</color>
+    <color name="bgElevated">#0F1A3A</color>
+    <color name="surface">#121E44</color>
+    <color name="surfaceVariant">#18254F</color>
+    <color name="outline">#26335C</color>
+    <color name="text">#EAF0FF</color>
+    <color name="muted">#9FB0D0</color>
+    <color name="brand">#2F6BFF</color>
+    <color name="brandDark">#1B3BFF</color>
+    <color name="brandOn">#FFFFFF</color>
+    <color name="accent">#46B4FF</color>
+    <color name="danger">#FF6B81</color>
+
+    <color name="ic_launcher_background">#0A1024</color>
+
+    <!-- Keyboard -->
+    <color name="kbBg">#0A1024</color>
+    <color name="kbKey">#17224A</color>
+    <color name="kbKeyAccent">#1F2E5E</color>
+    <color name="kbKeyText">#EAF0FF</color>
 </resources>
