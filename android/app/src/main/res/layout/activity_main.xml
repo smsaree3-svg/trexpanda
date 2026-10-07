@@ -98,6 +98,15 @@
             android:text="Switch keyboard" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/cloudSettingsButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        xmlns:tools="http://schemas.android.com/tools"
+        tools:ignore="HardcodedText"
+        android:text="Cloud settings (Supabase key)" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler"
         android:layout_width="match_parent"
