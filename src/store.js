@@ -178,6 +178,161 @@ function utcDayKey(d = new Date()) {
 }
 
 // ---------------------------------------------------------------------------
+// Per-user personal-snippet cloud sync (cross-device).
+//
+// Each personal snippet carries a STABLE `id` (so a trigger rename keeps its
+// identity) and an `updatedAt` timestamp. Deletions leave a tombstone so they
+// propagate to other devices instead of silently reappearing on the next pull.
+// Sync is last-write-wins per snippet by timestamp — the right model for a
+// single user across their own devices (desktop today, Android next).
+// ---------------------------------------------------------------------------
+
+/** Parse an ISO string / epoch-ms into epoch-ms (0 when absent/invalid). */
+function tsMs(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const t = Date.parse(String(v));
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function isoAt(ms) {
+  return new Date(ms).toISOString();
+}
+
+/** A stable UUID for a new snippet (crypto when available, else a fallback). */
+function genSnippetId() {
+  try {
+    const c = (typeof globalThis !== 'undefined' && globalThis.crypto) || null;
+    if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  } catch (_) {}
+  // RFC4122-ish fallback — good enough to be collision-free in practice.
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+/** Canonical content signature — changes iff the user-visible content changed. */
+function snippetSignature(s) {
+  return JSON.stringify({
+    trigger: s.trigger || '',
+    replacement: s.replacement || '',
+    label: typeof s.label === 'string' ? s.label : (s.trigger || ''),
+    enabled: s.enabled !== false,
+    html: s.html || null,
+    attachment: s.attachment || null,
+  });
+}
+
+/** The live-snippet shape kept locally, from a cloud row or a local record. */
+function liveFromRow(id, r, ts) {
+  const out = {
+    id,
+    trigger: r.trigger || '',
+    replacement: typeof r.replacement === 'string' ? r.replacement : '',
+    label: typeof r.label === 'string' ? r.label : (r.trigger || ''),
+    enabled: r.enabled !== false,
+    origin: 'personal',
+    updatedAt: isoAt(ts),
+  };
+  if (r.html) out.html = r.html;
+  if (r.attachment && typeof r.attachment === 'object' && r.attachment.data) out.attachment = r.attachment;
+  return out;
+}
+
+/** A DB upsert row (snake_case) from a resolved winner. */
+function rowFromWinner(id, w) {
+  if (w.state === 'deleted') {
+    return {
+      id,
+      trigger: (w.rec && w.rec.trigger) || '',
+      replacement: '',
+      label: null,
+      html: null,
+      attachment: null,
+      enabled: true,
+      updated_at: isoAt(w.ts),
+      deleted_at: isoAt(w.ts),
+    };
+  }
+  const s = w.rec;
+  return {
+    id,
+    trigger: s.trigger || '',
+    replacement: typeof s.replacement === 'string' ? s.replacement : '',
+    label: typeof s.label === 'string' ? s.label : (s.trigger || ''),
+    html: s.html || null,
+    attachment: s.attachment || null,
+    enabled: s.enabled !== false,
+    updated_at: isoAt(w.ts),
+    deleted_at: null,
+  };
+}
+
+// Tombstones older than this are pruned so the local store doesn't grow forever
+// (any peer that's been offline longer than this would miss the deletion, which
+// is an acceptable trade-off for a personal single-user tool).
+const TOMBSTONE_TTL_MS = 120 * 24 * 60 * 60 * 1000; // 120 days
+
+/**
+ * Reconcile local personal snippets with the cloud (pure, so it's unit-tested).
+ * @param {object} o
+ * @param {Array}  o.live        local live snippets ({id, updatedAt, ...})
+ * @param {Array}  o.tombstones  local deletions ({id, deletedAt, trigger?})
+ * @param {Array}  o.remote      cloud rows ({id, ..., updated_at, deleted_at})
+ * @param {number} o.now         current epoch ms
+ * @returns {{live:Array, tombstones:Array, push:Array}}
+ *   live/tombstones = the new local state; push = rows to upsert to the cloud.
+ */
+function mergeSnippetsForSync({ live = [], tombstones = [], remote = [], now = Date.now() } = {}) {
+  const local = new Map(); // id -> { state, ts, rec }
+  for (const s of live) {
+    if (s && s.id) local.set(s.id, { state: 'live', ts: tsMs(s.updatedAt) || now, rec: s });
+  }
+  for (const t of tombstones) {
+    if (t && t.id) local.set(t.id, { state: 'deleted', ts: tsMs(t.deletedAt) || now, rec: t });
+  }
+  const remoteById = new Map();
+  for (const r of remote) if (r && r.id) remoteById.set(r.id, r);
+
+  const ids = new Set([...local.keys(), ...remoteById.keys()]);
+  const newLive = [];
+  const newTombs = [];
+  const push = [];
+
+  for (const id of ids) {
+    const l = local.get(id);
+    const r = remoteById.get(id);
+    const rState = r ? (r.deleted_at ? 'deleted' : 'live') : null;
+    const rTs = r ? (r.deleted_at ? tsMs(r.deleted_at) : tsMs(r.updated_at)) : -1;
+
+    let win;
+    if (!l) {
+      win = { state: rState, ts: rTs, rec: r, push: false };
+    } else if (!r) {
+      win = { state: l.state, ts: l.ts, rec: l.rec, push: true };
+    } else if (l.ts > rTs) {
+      win = { state: l.state, ts: l.ts, rec: l.rec, push: true }; // local strictly newer
+    } else {
+      win = { state: rState, ts: rTs, rec: r, push: false }; // remote wins ties
+    }
+
+    if (win.state === 'live') {
+      // For a remote winner the rec is a DB row; for a local winner it's already
+      // a live snippet. liveFromRow normalizes either shape.
+      newLive.push(liveFromRow(id, win.rec, win.ts));
+    } else {
+      if (now - win.ts <= TOMBSTONE_TTL_MS) {
+        newTombs.push({ id, trigger: (win.rec && win.rec.trigger) || '', deletedAt: isoAt(win.ts) });
+      }
+    }
+    if (win.push) push.push(rowFromWinner(id, win));
+  }
+
+  return { live: newLive, tombstones: newTombs, push };
+}
+
+// ---------------------------------------------------------------------------
 // Persistent store (runtime only — requires electron-store).
 // ---------------------------------------------------------------------------
 
@@ -190,8 +345,64 @@ class Store {
   getPersonal() {
     return this.backend.get('personalSnippets', []);
   }
+
+  /**
+   * Save the user's personal snippets (from the editor). Assigns a stable `id`
+   * to any new snippet, stamps `updatedAt` only on snippets whose content
+   * actually changed, and records a tombstone for any snippet that was removed
+   * — so edits and deletions both propagate to the user's other devices.
+   */
   setPersonal(list) {
-    this.backend.set('personalSnippets', list);
+    const incoming = Array.isArray(list) ? list : [];
+    const prev = this.getPersonal();
+    const prevById = new Map();
+    const prevByTrigger = new Map();
+    for (const s of prev) {
+      if (!s) continue;
+      if (s.id) prevById.set(s.id, s);
+      if (s.trigger && !prevByTrigger.has(s.trigger)) prevByTrigger.set(s.trigger, s);
+    }
+    const now = Date.now();
+    const iso = isoAt(now);
+    const seen = new Set();
+    const out = incoming.map((raw) => {
+      const s = { ...raw, origin: 'personal' };
+      const prior = (s.id && prevById.get(s.id)) || prevByTrigger.get(s.trigger) || null;
+      if (!s.id) s.id = (prior && prior.id) || genSnippetId();
+      seen.add(s.id);
+      const changed = !prior || snippetSignature(prior) !== snippetSignature(s);
+      s.updatedAt = changed ? iso : (prior.updatedAt || iso);
+      return s;
+    });
+
+    // Tombstone anything that existed before but is now gone.
+    const tombs = this.getSnippetTombstones().slice();
+    const tombById = new Map(tombs.map((t) => [t.id, t]));
+    for (const s of prev) {
+      if (s && s.id && !seen.has(s.id)) {
+        const existing = tombById.get(s.id);
+        if (existing) { existing.deletedAt = iso; existing.trigger = s.trigger; }
+        else tombs.push({ id: s.id, trigger: s.trigger, deletedAt: iso });
+      }
+    }
+    // A re-added id cancels its tombstone.
+    const liveTombs = tombs.filter((t) => !seen.has(t.id));
+
+    this.backend.set('personalSnippets', out);
+    this.setSnippetTombstones(liveTombs);
+  }
+
+  /** Overwrite personal snippets + tombstones with a merged sync result (raw). */
+  applySyncedPersonal(live, tombstones) {
+    this.backend.set('personalSnippets', Array.isArray(live) ? live : []);
+    this.setSnippetTombstones(Array.isArray(tombstones) ? tombstones : []);
+  }
+
+  getSnippetTombstones() {
+    return this.backend.get('snippetTombstones', []);
+  }
+  setSnippetTombstones(list) {
+    this.backend.set('snippetTombstones', Array.isArray(list) ? list : []);
   }
 
   getTeamCache() {
@@ -290,4 +501,7 @@ class Store {
   }
 }
 
-module.exports = { normalizeSnippet, sanitizeUntrustedHtml, mergeSnippets, combineShared, parseLibrary, Store };
+module.exports = {
+  normalizeSnippet, sanitizeUntrustedHtml, mergeSnippets, combineShared, parseLibrary,
+  mergeSnippetsForSync, genSnippetId, Store,
+};

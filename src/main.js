@@ -7,7 +7,7 @@ const os = require('os');
 const { exec } = require('child_process');
 
 const { Expander } = require('./expander');
-const { Store } = require('./store');
+const { Store, mergeSnippetsForSync } = require('./store');
 const { charFor, K } = require('./keymap');
 const inject = require('./inject');
 const { fetchTeamLibrary, writeTeamLibrary } = require('./sync');
@@ -100,6 +100,7 @@ async function resolveEntitlement() {
         planRaw = await cloud.getEntitlement();
         store.setPlanRaw(planRaw);
         await reconcileFreeUsage(); // sync the account-linked daily counter
+        syncPersonal().catch(() => {}); // pull this account's snippets on sign-in
         pushState();
         return currentPlan();
       }
@@ -380,6 +381,39 @@ async function syncCloud() {
   }
 }
 
+/**
+ * Cross-device sync of the user's OWN personal snippets. Pulls the cloud rows,
+ * merges them with local (last-write-wins per snippet, deletions via tombstones),
+ * writes the merged set back locally, and pushes anything this device changed.
+ * Best-effort: offline/transient failures just retry on the next sync. This is
+ * the foundation the Android app will share.
+ */
+async function syncPersonal() {
+  if (!cloud || !cloud.configured()) return { ok: false, error: 'Cloud not configured.' };
+  let signedIn = false;
+  try { signedIn = (await cloud.status()).signedIn; } catch (_) {}
+  if (!signedIn) return { ok: false, error: 'Not signed in.' };
+  try {
+    const remote = await cloud.pullSnippets();
+    const merged = mergeSnippetsForSync({
+      live: store.getPersonal(),
+      tombstones: store.getSnippetTombstones(),
+      remote,
+      now: Date.now(),
+    });
+    store.applySyncedPersonal(merged.live, merged.tombstones);
+    if (merged.push.length) await cloud.pushSnippets(merged.push);
+    stats.lastCloudSyncAt = new Date().toISOString();
+    rebuildEngine();
+    pushState();
+    return { ok: true, pulled: remote.length, pushed: merged.push.length };
+  } catch (err) {
+    stats.lastCloudSyncError = String(err.message || err);
+    pushState();
+    return { ok: false, error: stats.lastCloudSyncError };
+  }
+}
+
 function scheduleSync() {
   if (syncTimer) clearInterval(syncTimer);
   if (cloudSyncTimer) clearInterval(cloudSyncTimer);
@@ -391,9 +425,14 @@ function scheduleSync() {
   }
   if (cloud && cloud.configured()) {
     syncCloud();
+    syncPersonal();
     // Also re-resolve entitlement on the interval so the account-linked free
     // counter reconciles with the server even while the app sits in the tray.
-    cloudSyncTimer = setInterval(() => { syncCloud(); resolveEntitlement().catch(() => {}); }, mins * 60 * 1000);
+    cloudSyncTimer = setInterval(() => {
+      syncCloud();
+      syncPersonal();
+      resolveEntitlement().catch(() => {});
+    }, mins * 60 * 1000);
   }
 }
 
@@ -629,6 +668,7 @@ function registerIpc() {
     store.setPersonal(next);
     rebuildEngine();
     pushState();
+    syncPersonal().catch(() => {}); // push this edit to the user's other devices
     return { ok: true };
   });
 
@@ -649,6 +689,7 @@ function registerIpc() {
   ipcMain.handle('sync-now', async () => {
     const res = await syncNow();
     await syncCloud();
+    await syncPersonal(); // pull/push this account's snippets across devices
     await resolveEntitlement(); // pick up plan changes on sign-in/out/sync
     return res;
   });
