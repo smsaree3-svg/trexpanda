@@ -20,7 +20,36 @@
 let nut = null;
 let loadError = null;
 try {
-  nut = require('@nut-tree-fork/nut-js');
+  // We drive the clipboard exclusively through Electron's own `clipboard`
+  // module (see expand()/expandHtml() below). nut-js is used ONLY to send
+  // keystrokes (Backspace, Paste, arrows), never to read or write the clipboard.
+  //
+  // Importing nut-js, however, eagerly loads its default clipboard provider,
+  // which does a top-level `require('clipboardy')`. clipboardy ships a small
+  // bundled Windows helper binary, and some antivirus products quarantine that
+  // helper (or clipboardy's package files). When that happens, resolving
+  // clipboardy fails with:
+  //   ENOENT ... app.asar.unpacked\node_modules\clipboardy\package.json
+  // and that single failure propagates out of the whole `require(nut-js)` call,
+  // which left `nut` null and disabled ALL expansion for that user — even
+  // though we never touch nut-js's clipboard.
+  //
+  // Stub `clipboardy` for the duration of the nut-js import so a missing or
+  // blocked clipboardy can never take down keystroke injection. The stub is
+  // only ever consulted by nut-js's unused clipboard provider.
+  const Module = require('module');
+  const originalLoad = Module._load;
+  Module._load = function (request, parent, isMain) {
+    if (request === 'clipboardy') {
+      return { readSync: () => '', writeSync: () => {}, read: async () => '', write: async () => {} };
+    }
+    return originalLoad.apply(this, arguments);
+  };
+  try {
+    nut = require('@nut-tree-fork/nut-js');
+  } finally {
+    Module._load = originalLoad;
+  }
   // Tighten default delays for snappy expansion.
   nut.keyboard.config.autoDelayMs = 0;
 } catch (err) {
