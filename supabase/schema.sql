@@ -159,3 +159,47 @@ end $$;
 drop trigger if exists libraries_touch on public.libraries;
 create trigger libraries_touch before update on public.libraries
   for each row execute function public.touch_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Personal snippets (per-user, cross-device sync).
+--
+-- Each row is one of the OWNER's personal snippets, identified by a stable id
+-- (so a trigger rename keeps its identity). `updated_at` drives last-write-wins
+-- merging; `deleted_at` is a soft-delete tombstone so a deletion on one device
+-- propagates to the others instead of reappearing on the next pull. The desktop
+-- app and the Android app both read/write this table as the signed-in user.
+-- (Distinct from `libraries`, which is for SHARING snippet sets with friends.)
+-- ---------------------------------------------------------------------------
+create table if not exists public.snippets (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  trigger     text,
+  replacement text not null default '',
+  label       text,
+  html        text,
+  attachment  jsonb,
+  enabled     boolean not null default true,
+  updated_at  timestamptz not null default now(),
+  deleted_at  timestamptz
+);
+create index if not exists snippets_user_idx on public.snippets(user_id);
+create index if not exists snippets_user_updated_idx on public.snippets(user_id, updated_at);
+
+alter table public.snippets enable row level security;
+
+drop policy if exists snippets_select_own on public.snippets;
+create policy snippets_select_own on public.snippets
+  for select to authenticated using (user_id = auth.uid());
+
+drop policy if exists snippets_insert_own on public.snippets;
+create policy snippets_insert_own on public.snippets
+  for insert to authenticated with check (user_id = auth.uid());
+
+drop policy if exists snippets_update_own on public.snippets;
+create policy snippets_update_own on public.snippets
+  for update to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists snippets_delete_own on public.snippets;
+create policy snippets_delete_own on public.snippets
+  for delete to authenticated using (user_id = auth.uid());
