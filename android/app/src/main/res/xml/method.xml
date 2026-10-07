@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Declares the Trexpanda keyboard as an input method (IME). The settings
+     activity opens the companion app for sign-in and snippet management. -->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.lumisha.trexpanda.MainActivity">
+    <subtype
+        android:label="@string/ime_subtype_label"
+        android:imeSubtypeMode="keyboard" />
+</input-method>
