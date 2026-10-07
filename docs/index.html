@@ -275,9 +275,9 @@
       <h2>Get Trexpanda</h2>
       <p>Install it on your computer and your phone, sign in once, and your snippets stay in sync in real time.</p>
       <div class="dl-row">
-        <a href="#" class="btn os" id="dlWin">⊞&nbsp; Download for Windows</a>
-        <a href="#" class="btn os" id="dlMac"> Download for macOS</a>
-        <a href="#" class="btn os" id="dlAndroid">🤖&nbsp; Get it for Android</a>
+        <a href="/trexpanda-latest.apk" download class="btn os" id="dlAndroid">🤖&nbsp; Download for Android (APK)</a>
+        <a href="#" class="btn os" id="dlWin">⊞&nbsp; Windows</a>
+        <a href="#" class="btn os" id="dlMac"> macOS</a>
         <button class="btn os share" id="shareBtn">🔗 Share with a friend</button>
       </div>
       <div class="dl-note" id="dlNote">Free during beta · Windows, macOS &amp; Android · always the latest version.</div>
@@ -368,23 +368,18 @@
     var configured = !!GITHUB.owner;
     var base = 'https://github.com/' + GITHUB.owner + '/' + GITHUB.repo;
 
-    // Android: Google Play listing (live once the app is published).
-    android.href = 'https://play.google.com/store/apps/details?id=com.lumisha.trexpanda';
+    // Android: direct signed APK download, always the latest build shipped here.
+    android.href = '/trexpanda-latest.apk';
+    note.innerHTML = 'Android APK available now (v0.1.0, signed) \u00b7 Windows & macOS coming soon';
 
-    if (configured){
-      win.href = '/download/windows';
-      mac.href = '/download/mac';
-      note.innerHTML = 'Free during beta \u00b7 Windows, macOS & Android \u00b7 always the latest version';
-    } else {
-      [win, mac].forEach(function(el){
-        el.addEventListener('click', function(e){
-          e.preventDefault();
-          note.innerHTML = '⬆ Almost there — set your GitHub username in the ' +
-            'site’s <b>GITHUB.owner</b> value and publish a <b>v0.1.0</b> tag. ' +
-            'These buttons will then download the real installers directly.';
-        });
+    // Desktop installers are not published yet: show a friendly note instead of a dead link.
+    [win, mac].forEach(function(el){
+      el.addEventListener('click', function(e){
+        e.preventDefault();
+        note.innerHTML = 'Desktop apps are on the way. The <b>Android app is ready to download now</b>. ' +
+          'Tap the APK above, open it on your phone, and allow install from your browser if prompted.';
       });
-    }
+    });
   })();
 </script>
 </body>
