@@ -8,105 +8,173 @@
     android:background="@color/bg"
     tools:ignore="HardcodedText">
 
-    <LinearLayout
+    <!-- Ambient top glow -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="360dp"
+        android:layout_gravity="top"
+        android:background="@drawable/top_glow" />
+
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingTop="20dp">
+        android:clipToPadding="false"
+        android:paddingHorizontal="18dp"
+        android:paddingTop="22dp"
+        android:paddingBottom="108dp">
 
-        <!-- Brand header -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:orientation="vertical">
 
-            <ImageView
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@drawable/ic_logo"
-                android:contentDescription="Trexpanda" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Trexpanda"
-                    android:textColor="@color/text"
-                    android:textSize="22sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Type Less. Do More."
-                    android:textColor="@color/brand"
-                    android:textSize="12sp"
-                    android:letterSpacing="0.02" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/liveChip"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="● Live"
-                android:visibility="gone"
-                android:paddingHorizontal="12dp"
-                android:paddingVertical="6dp"
-                android:textSize="12sp"
-                android:textStyle="bold"
-                android:textColor="@color/brand"
-                android:background="@drawable/chip_bg" />
-        </LinearLayout>
-
-        <!-- Account / sync card -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/TrexCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp">
-
+            <!-- Brand header -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <androidx.cardview.widget.CardView
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    app:cardCornerRadius="14dp"
+                    app:cardElevation="6dp"
+                    app:cardBackgroundColor="#FFFFFF">
+
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:padding="4dp"
+                        android:src="@drawable/ic_logo"
+                        android:contentDescription="Trexpanda" />
+                </androidx.cardview.widget.CardView>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="13dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Trexpanda"
+                        android:textColor="@color/text"
+                        android:textSize="23sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.01" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="Type Less. Do More."
+                        android:textColor="@color/accent"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.03" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/liveChip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:visibility="gone"
+                    android:background="@drawable/live_pill"
+                    android:paddingHorizontal="11dp"
+                    android:paddingVertical="6dp">
+
+                    <View
+                        android:layout_width="7dp"
+                        android:layout_height="7dp"
+                        android:layout_marginEnd="6dp"
+                        android:background="@drawable/dot_live" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Live"
+                        android:textColor="#BCD4FF"
+                        android:textStyle="bold"
+                        android:textSize="11.5sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Hero / account card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:orientation="vertical"
+                android:background="@drawable/hero_bg"
+                android:padding="18dp">
 
                 <TextView
-                    android:id="@+id/statusText"
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Not signed in"
+                    android:text="CLOUD SYNC"
+                    android:textColor="@color/accent"
+                    android:textStyle="bold"
+                    android:textSize="11sp"
+                    android:letterSpacing="0.14" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="7dp"
+                    android:text="Sync snippets across devices"
                     android:textColor="@color/text"
-                    android:textSize="15sp"
+                    android:textSize="18sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Sign in to sync your snippets across devices in real time."
+                    android:layout_marginTop="5dp"
+                    android:text="Sign in once. Your snippets stay in sync on your phone and computer, updated live."
                     android:textColor="@color/muted"
-                    android:textSize="13sp" />
+                    android:textSize="13.5sp"
+                    android:lineSpacingExtra="3dp" />
+
+                <TextView
+                    android:id="@+id/statusText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Not signed in"
+                    android:textColor="@color/accent"
+                    android:textSize="12.5sp"
+                    android:textStyle="bold"
+                    android:drawablePadding="7dp"
+                    android:gravity="center_vertical" />
+
+                <Button
+                    android:id="@+id/signInButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:layout_marginTop="16dp"
+                    android:text="Sign in with Google"
+                    android:textColor="#FFFFFF"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textAllCaps="false"
+                    android:background="@drawable/btn_primary"
+                    android:drawableStart="@drawable/ic_google_g"
+                    android:drawablePadding="10dp"
+                    android:paddingStart="22dp"
+                    android:paddingEnd="22dp"
+                    android:stateListAnimator="@null"
+                    android:elevation="2dp" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
+                    android:layout_marginTop="12dp"
                     android:orientation="horizontal">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/signInButton"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Sign in with Google" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/signOutButton"
@@ -115,15 +183,18 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:visibility="gone"
+                        android:textAllCaps="false"
                         android:text="Sign out" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/syncButton"
                         style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="wrap_content"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_weight="1"
                         android:layout_marginStart="8dp"
-                        android:text="Sync" />
+                        android:textAllCaps="false"
+                        android:text="Sync now" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
@@ -131,86 +202,161 @@
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="-8dp"
-                    android:text="Cloud settings (Supabase key)" />
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="4dp"
+                    android:textAllCaps="false"
+                    android:textSize="12.5sp"
+                    android:textColor="@color/accent"
+                    android:text="Add your Supabase cloud key" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
-        <!-- Keyboard setup card -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/TrexCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp">
-
-            <LinearLayout
+            <!-- Keyboard card -->
+            <com.google.android.material.card.MaterialCardView
+                style="@style/TrexCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Keyboard"
-                    android:textColor="@color/text"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Turn on the Trexpanda keyboard, then switch to it in any app."
-                    android:textColor="@color/muted"
-                    android:textSize="13sp" />
+                android:layout_marginTop="14dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:orientation="horizontal">
+                    android:orientation="vertical">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/enableKeyboardButton"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Enable keyboard" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/switchKeyboardButton"
-                        style="@style/Widget.Material3.Button.OutlinedButton"
-                        android:layout_width="0dp"
+                        <TextView
+                            android:layout_width="42dp"
+                            android:layout_height="42dp"
+                            android:background="@drawable/key_icon_bg"
+                            android:gravity="center"
+                            android:text="⌨"
+                            android:textSize="20sp" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="12dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Trexpanda Keyboard"
+                                android:textColor="@color/text"
+                                android:textSize="15.5sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Expand snippets as you type, anywhere"
+                                android:textColor="@color/muted"
+                                android:textSize="12.5sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="8dp"
-                        android:text="Switch keyboard" />
+                        android:layout_marginTop="14dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/enableKeyboardButton"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:textAllCaps="false"
+                            android:text="Enable" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/switchKeyboardButton"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="10dp"
+                            android:textAllCaps="false"
+                            android:text="Switch to it" />
+                    </LinearLayout>
                 </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Snippets header -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="26dp"
+                android:layout_marginBottom="4dp"
+                android:paddingHorizontal="2dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="MY SNIPPETS"
+                    android:textColor="@color/muted"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.13" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
-        <!-- Snippets header -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
-            android:layout_marginStart="4dp"
-            android:text="My snippets"
-            android:textColor="@color/muted"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.08" />
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recycler"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:nestedScrollingEnabled="false"
+                android:clipToPadding="false"
+                android:paddingTop="8dp" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recycler"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:paddingTop="8dp"
-            android:paddingBottom="96dp" />
-    </LinearLayout>
+            <!-- Empty state -->
+            <LinearLayout
+                android:id="@+id/emptyState"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingVertical="30dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:background="@drawable/key_icon_bg"
+                    android:gravity="center"
+                    android:text="✦"
+                    android:textColor="@color/accent"
+                    android:textSize="26sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="No snippets yet"
+                    android:textColor="@color/text"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Tap New snippet to create your first shortcut."
+                    android:textColor="@color/muted"
+                    android:textSize="13sp"
+                    android:gravity="center" />
+            </LinearLayout>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
 
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/addButton"
@@ -219,6 +365,12 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="20dp"
         android:text="New snippet"
-        app:icon="@android:drawable/ic_input_add" />
+        android:textAllCaps="false"
+        android:textStyle="bold"
+        app:icon="@android:drawable/ic_input_add"
+        app:backgroundTint="@color/brand"
+        app:iconTint="#FFFFFF"
+        android:textColor="#FFFFFF"
+        app:elevation="10dp" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
