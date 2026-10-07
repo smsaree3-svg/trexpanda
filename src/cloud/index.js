@@ -138,6 +138,35 @@ class CloudService {
     return typeof data === 'number' ? data : 0;
   }
 
+  // -- personal snippet sync (cross-device) ----------------------------------
+  // The `snippets` table holds the caller's OWN personal snippets, one row each,
+  // keyed by a stable id with an updated_at and a soft-delete (deleted_at).
+  // RLS restricts every row to its owner, so these run as the signed-in user.
+
+  /** Pull ALL of the caller's snippet rows (live + tombstones) from the cloud. */
+  async pullSnippets() {
+    const client = this._requireClient();
+    const me = await this._uid();
+    const { data, error } = await client
+      .from('snippets')
+      .select('id, trigger, replacement, label, html, attachment, enabled, updated_at, deleted_at')
+      .eq('user_id', me);
+    if (error) throw new Error(error.message || 'Could not pull snippets.');
+    return data || [];
+  }
+
+  /** Upsert changed snippet rows to the cloud (keyed by id). */
+  async pushSnippets(rows) {
+    const client = this._requireClient();
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return { ok: true, count: 0 };
+    const me = await this._uid();
+    const payload = list.map((r) => ({ ...r, user_id: me }));
+    const { error } = await client.from('snippets').upsert(payload, { onConflict: 'id' });
+    if (error) throw new Error(error.message || 'Could not push snippets.');
+    return { ok: true, count: payload.length };
+  }
+
   /** Redeem a coupon code (server validates + records + grants). */
   async redeemCoupon(code) {
     const client = this._requireClient();
