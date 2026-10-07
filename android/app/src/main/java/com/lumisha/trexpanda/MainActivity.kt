@@ -8,7 +8,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
-import android.widget.CheckBox
+import android.widget.CompoundButton
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -27,7 +27,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var auth: AuthManager
     private lateinit var store: SnippetStore
     private lateinit var sync: SyncManager
+    private lateinit var realtime: RealtimeClient
 
+    private lateinit var liveChip: TextView
     private lateinit var statusText: TextView
     private lateinit var signInButton: Button
     private lateinit var signOutButton: Button
@@ -47,6 +49,13 @@ class MainActivity : AppCompatActivity() {
         auth = AuthManager(this)
         store = SnippetStore(this)
         sync = SyncManager(this, auth, store)
+        // Live updates: any change pushed from the cloud triggers a sync + refresh.
+        realtime = RealtimeClient(auth) {
+            runOnUiThread {
+                liveChip.visibility = if (auth.isSignedIn) View.VISIBLE else View.GONE
+                runSync()
+            }
+        }
 
         statusText = findViewById(R.id.statusText)
         signInButton = findViewById(R.id.signInButton)
@@ -56,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         enableKeyboardButton = findViewById(R.id.enableKeyboardButton)
         switchKeyboardButton = findViewById(R.id.switchKeyboardButton)
         cloudSettingsButton = findViewById(R.id.cloudSettingsButton)
+        liveChip = findViewById(R.id.liveChip)
         recycler = findViewById(R.id.recycler)
 
         adapter = SnippetAdapter(
@@ -74,7 +84,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         cloudSettingsButton.setOnClickListener { showCloudSettingsDialog() }
-        signOutButton.setOnClickListener { auth.signOut(); refresh() }
+        signOutButton.setOnClickListener { realtime.stop(); auth.signOut(); refresh() }
         syncButton.setOnClickListener { runSync() }
         addButton.setOnClickListener { showEditDialog(null) }
         enableKeyboardButton.setOnClickListener {
@@ -96,7 +106,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
-        if (auth.isSignedIn) runSync()
+        if (auth.isSignedIn) {
+            runSync()
+            realtime.start()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        realtime.stop()
     }
 
     private fun handleAuthRedirect(intent: Intent?) {
@@ -107,7 +125,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     toast(if (ok) "Signed in." else "Sign-in failed.")
                     refresh()
-                    if (ok) runSync()
+                    if (ok) { runSync(); realtime.start() }
                 }
             }.start()
         }
@@ -129,6 +147,7 @@ class MainActivity : AppCompatActivity() {
         signInButton.visibility = if (signedIn) View.GONE else View.VISIBLE
         signOutButton.visibility = if (signedIn) View.VISIBLE else View.GONE
         syncButton.isEnabled = signedIn
+        liveChip.visibility = if (signedIn) View.VISIBLE else View.GONE
         statusText.text = when {
             !SupabaseConfig.isConfigured() -> "Cloud not configured"
             signedIn -> "Signed in as ${auth.userEmail ?: "you"}"
@@ -177,7 +196,7 @@ class MainActivity : AppCompatActivity() {
         val triggerInput = view.findViewById<EditText>(R.id.triggerInput)
         val replacementInput = view.findViewById<EditText>(R.id.replacementInput)
         val labelInput = view.findViewById<EditText>(R.id.labelInput)
-        val enabledCheck = view.findViewById<CheckBox>(R.id.enabledCheck)
+        val enabledCheck = view.findViewById<CompoundButton>(R.id.enabledCheck)
 
         existing?.let {
             triggerInput.setText(it.trigger)

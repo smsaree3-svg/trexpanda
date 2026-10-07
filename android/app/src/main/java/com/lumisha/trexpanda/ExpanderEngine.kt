@@ -94,6 +94,24 @@ class ExpanderEngine(
     }
 
     /**
+     * Build the expansion for a known trigger, used when the user taps a live
+     * suggestion. `backspaces` is the full trigger length; the caller may instead
+     * delete only the partial token it already committed.
+     */
+    fun snippetAction(trigger: String): Action? {
+        val snippet = map[trigger] ?: return null
+        val rendered = render(snippet.replacement)
+        buffer = ""
+        return Action(
+            trigger = trigger,
+            replacement = rendered.text,
+            backspaces = trigger.length,
+            caretBack = rendered.caretBack,
+            html = snippet.html?.let { renderHtml(it) },
+        )
+    }
+
+    /**
      * Live autocomplete: snippets whose trigger STARTS WITH the current token
      * (the run of non-space characters at the end of the buffer).
      */
