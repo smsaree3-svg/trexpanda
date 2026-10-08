@@ -1,5 +1,6 @@
 package com.lumisha.trexpanda
 
+import java.text.BreakIterator
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -36,7 +37,15 @@ class ExpanderEngine(
         val isHtml: Boolean,
     )
 
-    private var map: LinkedHashMap<String, Snippet> = LinkedHashMap()
+    /** One active trigger: the canonical (as-typed) spelling and its snippet. */
+    private data class Entry(val trigger: String, val snippet: Snippet)
+
+    // Case-insensitive active index: lowercased trigger -> Entry. Triggers match
+    // case-insensitively, so ";ch", ";CH" and ";Ch" are the SAME trigger; exactly
+    // one active snippet exists per lowercased trigger and the LAST definition
+    // wins (SPEC-EXPANSION.md section 5). Lowercasing the key once here keeps the
+    // per-keystroke match path free of per-trigger lowercase() calls.
+    private var byLower: LinkedHashMap<String, Entry> = LinkedHashMap()
     private var maxTrigger: Int = 1
     private var buffer: String = ""
 
@@ -45,15 +54,15 @@ class ExpanderEngine(
     }
 
     fun setSnippets(snippets: List<Snippet>) {
-        val next = LinkedHashMap<String, Snippet>()
+        val next = LinkedHashMap<String, Entry>()
         var max = 1
         for (s in snippets) {
             val t = s.trigger
             if (t.isNullOrEmpty() || !s.enabled || s.isDeleted) continue
-            next[t] = s
+            next[t.lowercase()] = Entry(t, s) // last definition wins per lowercased trigger
             if (t.length > max) max = t.length
         }
-        map = next
+        byLower = next
         maxTrigger = max
         if (buffer.length > maxTrigger) buffer = buffer.takeLast(maxTrigger)
     }
@@ -68,24 +77,32 @@ class ExpanderEngine(
         buffer = (buffer + ch).takeLast(maxTrigger)
 
         // Prefer the longest matching trigger so ";addr2" wins over ";addr".
-        var best: String? = null
-        for (trigger in map.keys) {
-            if (buffer.endsWith(trigger)) {
-                if (best == null || trigger.length > best!!.length) best = trigger
-            }
-        }
-        val match = best ?: return null
+        // Matching is case-insensitive against the precomputed lowercased keys.
+        val lowerBuf = buffer.lowercase()
+        val best = bestMatch(lowerBuf) ?: return null
 
-        val snippet = map[match]!!
+        val snippet = best.snippet
         val rendered = render(snippet.replacement)
         buffer = "" // consumed
         return Action(
-            trigger = match,
+            trigger = best.trigger,
             replacement = rendered.text,
-            backspaces = match.length,
+            backspaces = best.trigger.length,
             caretBack = rendered.caretBack,
             html = snippet.html?.let { renderHtml(it) },
         )
+    }
+
+    /** Longest active trigger whose lowercased form is a suffix of [lowerText]. */
+    private fun bestMatch(lowerText: String): Entry? {
+        var best: Entry? = null
+        var bestLen = -1
+        for ((lower, entry) in byLower) {
+            if (lowerText.endsWith(lower) && lower.length > bestLen) {
+                best = entry; bestLen = lower.length
+            }
+        }
+        return best
     }
 
     /** Keep the buffer in sync when the user presses Backspace. */
@@ -99,11 +116,14 @@ class ExpanderEngine(
      * delete only the partial token it already committed.
      */
     fun snippetAction(trigger: String): Action? {
-        val snippet = map[trigger] ?: return null
+        // Resolve case-insensitively: a tapped suggestion carries the canonical
+        // trigger, but accept any-case input too.
+        val entry = byLower[trigger.lowercase()] ?: return null
+        val snippet = entry.snippet
         val rendered = render(snippet.replacement)
         buffer = ""
         return Action(
-            trigger = trigger,
+            trigger = entry.trigger,
             replacement = rendered.text,
             backspaces = trigger.length,
             caretBack = rendered.caretBack,
@@ -120,9 +140,58 @@ class ExpanderEngine(
         val token = m?.groupValues?.get(1) ?: ""
         if (token.isEmpty()) return "" to emptyList()
 
+        val tokenLower = token.lowercase()
         val items = ArrayList<Suggestion>()
-        for ((trigger, snippet) in map) {
-            if (trigger.length >= token.length && trigger.startsWith(token)) {
+        for ((lower, entry) in byLower) {
+            val trigger = entry.trigger; val snippet = entry.snippet
+            if (trigger.length >= token.length && lower.startsWith(tokenLower)) {
+                val raw = snippet.replacement
+                items.add(
+                    Suggestion(
+                        trigger = trigger,
+                        preview = raw.replace(Regex("\\s+"), " ").trim().take(140),
+                        hasAttachment = snippet.attachment != null,
+                        isHtml = snippet.html != null,
+                    )
+                )
+            }
+        }
+        items.sortWith(compareBy({ it.trigger.length }, { it.trigger }))
+        return token to items.take(maxOf(1, limit))
+    }
+
+    /** Longest trigger length, so the IME knows how much preceding text to read. */
+    fun maxTriggerLen(): Int = maxTrigger
+
+    /**
+     * Stateless match against the actual text before the caret. The IME calls
+     * this with `getTextBeforeCursor(...)` after each committed character, so
+     * expansion no longer depends on an internal buffer that cursor callbacks
+     * could reset. Longest matching trigger wins.
+     */
+    fun matchSuffix(textBeforeCursor: CharSequence): Action? {
+        val text = textBeforeCursor.toString().lowercase()
+        val best = bestMatch(text) ?: return null
+        val snippet = best.snippet
+        val rendered = render(snippet.replacement)
+        return Action(
+            trigger = best.trigger,
+            replacement = rendered.text,
+            backspaces = best.trigger.length,
+            caretBack = rendered.caretBack,
+            html = snippet.html?.let { renderHtml(it) },
+        )
+    }
+
+    /** Stateless suggestions from the last non-space token of the given text. */
+    fun suggestionsFrom(textBeforeCursor: CharSequence, limit: Int = 6): Pair<String, List<Suggestion>> {
+        val token = Regex("(\\S+)$").find(textBeforeCursor.toString())?.groupValues?.get(1) ?: ""
+        if (token.isEmpty()) return "" to emptyList()
+        val tokenLower = token.lowercase()
+        val items = ArrayList<Suggestion>()
+        for ((lower, entry) in byLower) {
+            val trigger = entry.trigger; val snippet = entry.snippet
+            if (trigger.length >= token.length && lower.startsWith(tokenLower)) {
                 val raw = snippet.replacement
                 items.add(
                     Suggestion(
@@ -144,8 +213,9 @@ class ExpanderEngine(
     /**
      * Expand dynamic tokens ({date} {time} {datetime} plus any custom resolver)
      * and locate the "$|" caret marker. The marker is removed; [Rendered.caretBack]
-     * is counted in CODE POINTS (not UTF-16 units) so one astral emoji is a single
-     * Left-arrow step, matching the desktop engine.
+     * is counted in GRAPHEME CLUSTERS (user-perceived characters) via the platform
+     * Unicode segmenter, the same unit DPAD_LEFT moves the caret by, so a flag,
+     * skin-tone, or ZWJ emoji is one step. This matches the desktop and iOS engines.
      */
     fun render(replacement: String): Rendered {
         var text = resolveTokens(replacement)
@@ -154,10 +224,21 @@ class ExpanderEngine(
         val marker = text.indexOf("\$|")
         if (marker != -1) {
             val after = text.substring(marker + 2).split("\$|").joinToString("")
-            caretBack = after.codePointCount(0, after.length)
+            caretBack = graphemeCount(after)
             text = text.substring(0, marker) + after
         }
         return Rendered(text, caretBack)
+    }
+
+    /** Grapheme-cluster count via BreakIterator (ICU-backed on Android). */
+    private fun graphemeCount(s: String): Int {
+        if (s.isEmpty()) return 0
+        val it = BreakIterator.getCharacterInstance()
+        it.setText(s)
+        var count = 0
+        it.first()
+        while (it.next() != BreakIterator.DONE) count++
+        return count
     }
 
     /** Resolve {tokens} in an HTML replacement and strip every "$|" marker. */

@@ -65,4 +65,90 @@ class ExpanderEngineTest {
         assertEquals(2, items.size)
         assertEquals(";addr", items[0].trigger)
     }
+
+    @Test fun triggerMatchesRegardlessOfCase() {
+        val e = ExpanderEngine(listOf(snip("1", ";ch", "Chennai")))
+        // Mixed case typed via onChar
+        e.onChar(';'); e.onChar('C')
+        val a = e.onChar('H')
+        assertNotNull(a)
+        assertEquals("Chennai", a!!.replacement)
+        assertEquals(";ch", a.trigger)   // canonical stored form
+        assertEquals(3, a.backspaces)
+    }
+
+    @Test fun matchSuffixIsCaseInsensitive() {
+        val e = ExpanderEngine(listOf(snip("1", ";brb", "be right back")))
+        val a = e.matchSuffix("ok ;BRB")
+        assertNotNull(a)
+        assertEquals("be right back", a!!.replacement)
+        assertEquals(";brb", a.trigger)
+    }
+
+    @Test fun upperCaseStoredTriggerMatchesLowerTyping() {
+        val e = ExpanderEngine(listOf(snip("1", ";GM", "Good morning")))
+        val a = e.matchSuffix("hey ;gm")
+        assertNotNull(a)
+        assertEquals("Good morning", a!!.replacement)
+    }
+
+    @Test fun suggestionsAreCaseInsensitive() {
+        val e = ExpanderEngine(listOf(snip("1", ";Addr", "123 Main")))
+        val (token, items) = e.suggestionsFrom("hi ;AD")
+        assertEquals(";AD", token)
+        assertEquals(1, items.size)
+        assertEquals(";Addr", items[0].trigger)
+    }
+
+    // ---- spec edge cases ----
+
+    @Test fun unknownTokenIsLeftUntouched() {
+        val e = ExpanderEngine(listOf(snip("1", ";v", "Hi {name}, on {date}")))
+        val a = e.matchSuffix(";v")
+        assertNotNull(a)
+        assertEquals(true, a!!.replacement.startsWith("Hi {name}, on "))
+        assertEquals(true, Regex("\\d{4}-\\d{2}-\\d{2}$").containsMatchIn(a.replacement))
+    }
+
+    @Test fun everyKnownTokenOccurrenceReplaced() {
+        val e = ExpanderEngine(listOf(snip("1", ";d2", "{date} to {date}")))
+        val a = e.matchSuffix(";d2")!!
+        val parts = a.replacement.split(" to ")
+        assertEquals(2, parts.size)
+        assertEquals(parts[0], parts[1])
+        assertEquals(true, Regex("^\\d{4}-\\d{2}-\\d{2}$").matches(parts[0]))
+    }
+
+    @Test fun emptyReplacementStillDeletesTrigger() {
+        val e = ExpanderEngine(listOf(snip("1", ";x", "")))
+        val a = e.matchSuffix(";x")
+        assertNotNull(a)
+        assertEquals("", a!!.replacement)
+        assertEquals(2, a.backspaces)
+    }
+
+    @Test fun duplicateTriggerLastWins() {
+        val e = ExpanderEngine(listOf(snip("1", ";dup", "first"), snip("2", ";dup", "second")))
+        assertEquals("second", e.matchSuffix(";dup")!!.replacement)
+    }
+
+    @Test fun duplicateTriggerCaseInsensitiveLastWins() {
+        // SPEC V4: ";test"->First then ";TEST"->Second collapse to one trigger; last wins.
+        val e = ExpanderEngine(listOf(snip("1", ";test", "First"), snip("2", ";TEST", "Second")))
+        assertEquals("Second", e.matchSuffix("go ;test")!!.replacement)
+        assertEquals("Second", e.matchSuffix("go ;TEST")!!.replacement)
+    }
+
+    @Test fun multipleCursorMarkersFirstWinsAllStripped() {
+        // SPEC V8
+        val e = ExpanderEngine(listOf(snip("1", ";m2", "Hello \$|world \$|")))
+        val a = e.matchSuffix(";m2")!!
+        assertEquals("Hello world ", a.replacement)
+        assertEquals("world ".length, a.caretBack)
+    }
+
+    @Test fun multilineAndUnicodeVerbatim() {
+        val e = ExpanderEngine(listOf(snip("1", ";m", "Line 1\nLíne 2 ✨\n日本語")))
+        assertEquals("Line 1\nLíne 2 ✨\n日本語", e.matchSuffix(";m")!!.replacement)
+    }
 }

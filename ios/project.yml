@@ -1,0 +1,86 @@
+# XcodeGen spec for the Trexpanda iOS app + custom keyboard extension.
+# Generate the Xcode project with:  xcodegen generate
+# then open Trexpanda.xcodeproj in Xcode, set your Team, and build.
+name: Trexpanda
+options:
+  bundleIdPrefix: com.lumisha
+  deploymentTarget:
+    # iOS 16 is required because the app UI uses SwiftUI NavigationStack
+    # (SnippetEditView). Surfaced by the first real device build during the
+    # conformance gate; the shared engine itself targets far lower.
+    iOS: "16.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    # Set this to your Apple Developer Team ID (Membership page), or pick the
+    # team in Xcode's Signing & Capabilities tab after generating.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    TARGETED_DEVICE_FAMILY: "1,2"
+
+targets:
+  Trexpanda:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumisha.trexpanda
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Trexpanda.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+    dependencies:
+      - target: TrexpandaKeyboard
+
+  TrexpandaKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Keyboard
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumisha.trexpanda.keyboard
+        INFOPLIST_FILE: Keyboard/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Keyboard/Keyboard.entitlements
+
+  # Hostless logic-test bundle for the ExpansionSpecificationV1 conformance suite.
+  # It compiles the two pure-Foundation sources directly (no @testable import, no
+  # host app, no App Group entitlement, no signing), so it runs on a bare
+  # simulator with `xcodebuild test`.
+  TrexpandaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+      - path: Shared/ExpanderEngine.swift
+      - path: Shared/Snippet.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lumisha.trexpanda.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+
+schemes:
+  Trexpanda:
+    # `build: all` so that `xcodebuild test` also compiles the app and the
+    # keyboard extension (verifying they still build against the updated shared
+    # engine, and that the App Group config does not break the build), while the
+    # hostless TrexpandaTests bundle runs the conformance vectors.
+    build:
+      targets:
+        Trexpanda: all
+        TrexpandaKeyboard: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - TrexpandaTests

@@ -70,6 +70,22 @@ test('{date} token renders as ISO date', () => {
   assert(/Today \d{4}-\d{2}-\d{2}/.test(a.replacement), 'got: ' + a.replacement);
 });
 
+test('{date} uses the LOCAL date, not UTC (parity with Android/iOS)', () => {
+  const eng = new Expander([{ trigger: ';d', replacement: '{date}' }]);
+  const now = new Date();
+  const expected = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0');
+  assert.strictEqual(typeString(eng, ';d').replacement, expected);
+});
+
+test('suggestion order is plain lexicographic (code unit), not locale', () => {
+  // Uppercase sorts before lowercase by code unit, the opposite of locale order.
+  const eng = new Expander([{ trigger: ';Zebra', replacement: 'x' }, { trigger: ';apple', replacement: 'y' }]);
+  typeString(eng, ';');
+  assert.deepStrictEqual(eng.suggestions().items.map((i) => i.trigger), [';Zebra', ';apple']);
+});
+
 test('caret marker $| sets caretBack and is removed', () => {
   const eng = new Expander([{ trigger: ';sig', replacement: 'Dear $|,\nRegards' }]);
   const a = typeString(eng, ';sig');
@@ -77,12 +93,15 @@ test('caret marker $| sets caretBack and is removed', () => {
   assert.strictEqual(a.caretBack, ',\nRegards'.length);
 });
 
-test('caret marker counts CODE POINTS (emoji), not UTF-16 units', () => {
+test('caret marker counts GRAPHEME CLUSTERS, not UTF-16 units', () => {
   const eng = new Expander([{ trigger: ';e', replacement: 'hi $|😀end' }]);
   const a = typeString(eng, ';e');
   assert(!a.replacement.includes('$|'), 'marker stripped');
-  // "😀end" is 4 code points; the caret moves back 4 Left presses, not 5.
+  // "😀end" is 4 grapheme clusters; the caret moves back 4 Left presses, not 5.
   assert.strictEqual(a.caretBack, 4);
+  // A flag is 2 code points but ONE grapheme: caret moves back 1, not 2.
+  const eng2 = new Expander([{ trigger: ';f', replacement: 'x$|🇮🇳' }]);
+  assert.strictEqual(typeString(eng2, ';f').caretBack, 1);
 });
 
 test('render strips EXTRA $| markers beyond the first', () => {
@@ -105,6 +124,76 @@ test('setSnippets updates live without losing the instance', () => {
   assert.strictEqual(typeString(eng, ';a'), null);
   const a = typeString(eng, ';b');
   assert.strictEqual(a.replacement, '2');
+});
+
+// ---- case-insensitive matching --------------------------------------------
+
+test('trigger matches regardless of typed case', () => {
+  const eng = new Expander([{ trigger: ';ch', replacement: 'Chennai' }]);
+  // Upper-case and mixed-case typing fire the same snippet.
+  assert.strictEqual(typeString(eng, ';CH').replacement, 'Chennai');
+  eng.reset();
+  assert.strictEqual(typeString(eng, ';Ch').replacement, 'Chennai');
+  eng.reset();
+  assert.strictEqual(typeString(eng, ';ch').replacement, 'Chennai');
+});
+
+test('matched action keeps the stored trigger and full delete count', () => {
+  const eng = new Expander([{ trigger: ';addr', replacement: 'X' }]);
+  const a = typeString(eng, 'hi ;ADDR');
+  assert.strictEqual(a.trigger, ';addr'); // canonical, not what was typed
+  assert.strictEqual(a.backspaces, 5);
+});
+
+test('an upper-case stored trigger matches lower-case typing', () => {
+  const eng = new Expander([{ trigger: ';BRB', replacement: 'be right back' }]);
+  assert.strictEqual(typeString(eng, ';brb').replacement, 'be right back');
+});
+
+test('suggestions are case-insensitive on the typed token', () => {
+  const eng = new Expander([{ trigger: ';Addr', replacement: '123 Market St' }]);
+  typeString(eng, ';AD');
+  assert.deepStrictEqual(eng.suggestions().items.map((i) => i.trigger), [';Addr']);
+});
+
+// ---- spec edge cases -------------------------------------------------------
+
+test('spec: unknown token is left untouched', () => {
+  const eng = new Expander([{ trigger: ';v', replacement: 'Hi {name}, on {date}' }]);
+  const a = typeString(eng, ';v');
+  assert(a.replacement.startsWith('Hi {name}, on '), 'unknown {name} kept: ' + a.replacement);
+  assert(/\d{4}-\d{2}-\d{2}$/.test(a.replacement), 'known {date} resolved: ' + a.replacement);
+});
+
+test('spec: every occurrence of a known token is replaced', () => {
+  const eng = new Expander([{ trigger: ';d2', replacement: '{date} to {date}' }]);
+  const a = typeString(eng, ';d2');
+  const parts = a.replacement.split(' to ');
+  assert.strictEqual(parts.length, 2);
+  assert.strictEqual(parts[0], parts[1], 'both {date} resolved the same: ' + a.replacement);
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(parts[0]), 'ISO date: ' + parts[0]);
+});
+
+test('spec: empty replacement expands to nothing but still deletes the trigger', () => {
+  const eng = new Expander([{ trigger: ';x', replacement: '' }]);
+  const a = typeString(eng, ';x');
+  assert(a, 'empty replacement still produces an action');
+  assert.strictEqual(a.replacement, '');
+  assert.strictEqual(a.backspaces, 2); // ";x"
+});
+
+test('spec: duplicate trigger, the last one defined wins', () => {
+  const eng = new Expander([
+    { trigger: ';dup', replacement: 'first' },
+    { trigger: ';dup', replacement: 'second' },
+  ]);
+  assert.strictEqual(typeString(eng, ';dup').replacement, 'second');
+});
+
+test('spec: multiline and unicode replacements are inserted verbatim', () => {
+  const eng = new Expander([{ trigger: ';m', replacement: 'Line 1\nLíne 2 ✨\n日本語' }]);
+  const a = typeString(eng, ';m');
+  assert.strictEqual(a.replacement, 'Line 1\nLíne 2 ✨\n日本語');
 });
 
 // ---- live suggestions -----------------------------------------------------
