@@ -995,8 +995,11 @@ async function doForgotPassword() {
   const btn = $('btn-forgot'); btn.disabled = true;
   const res = await cc('requestPasswordReset', { email });
   btn.disabled = false;
-  if (!res.ok) { authError(res.error || 'Could not send the reset email.'); return; }
-  authError('If an account exists for ' + email + ', a password-reset link is on its way. It opens a page where you choose a new password.');
+  // Same message whether or not the address has an account (and for rate limits,
+  // which Supabase only applies to existing accounts), so this can't be used to
+  // check who is registered. Only a malformed address gets its own message.
+  if (!res.ok && /Enter the email/.test(res.error || '')) { authError(res.error); return; }
+  authError('If an account exists for ' + email + ', a password-reset link is on its way. It opens a page where you choose a new password. Nothing after a few minutes? Check spam, then try again later.');
 }
 
 async function doGoogle() {

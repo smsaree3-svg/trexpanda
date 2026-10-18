@@ -166,6 +166,7 @@ Auto-sync), and on demand via **Sync now**.
   item — once built, macros ride this same sharing system.
 - Google sign-in is wired in (see above). GitHub or other providers would work
   the same way — enable the provider in Supabase and add a button that calls the
-  same loopback flow. Password reset isn't wired into the UI yet.
+  same loopback flow. Password reset uses the app's **Forgot password?** button
+  and the trexpanda.com/reset-password/ page (see step 3).
 - One "default library" per user is used for sharing today; the schema already
   supports multiple named libraries if you want to expand the UI later.

@@ -21,4 +21,6 @@ grant execute on function auth.uid() to anon, authenticated;
 grant usage on schema public to anon, authenticated;
 alter default privileges in schema public grant all on tables to anon, authenticated;
 alter default privileges in schema public grant all on sequences to anon, authenticated;
+-- Like Supabase: new functions are executable by the API roles unless revoked.
+alter default privileges in schema public grant execute on functions to anon, authenticated;
 create publication supabase_realtime;

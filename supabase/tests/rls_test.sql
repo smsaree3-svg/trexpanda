@@ -1,16 +1,7 @@
--- Row-level security regression tests for the 2026-10-17 hardening (F1–F4).
--- Runs on a DISPOSABLE local Postgres after 00_supabase_stub.sql, schema.sql,
--- billing.sql and migrations/20261017_security_hardening.sql. Every check raises
--- on failure, so psql -v ON_ERROR_STOP=1 exits non-zero. Synthetic users only.
-
-insert into auth.users(id, email, email_confirmed_at) values
- ('00000000-0000-0000-0000-00000000000a','alice@example.test', now()),
- ('00000000-0000-0000-0000-00000000000b','bob@example.test',   now()),
- ('00000000-0000-0000-0000-0000000000ee','hello@trexpanda.com', now());  -- attacker-held admin address
-insert into public.profiles(id, username, display_name) values
- ('00000000-0000-0000-0000-00000000000a','alice.real','Alice Example'),
- ('00000000-0000-0000-0000-00000000000b','bob.real','Bob Example'),
- ('00000000-0000-0000-0000-0000000000ee','mallory','Mallory');
+-- Row-level security regression tests for the 2026-10-17 hardening (F1-F4).
+-- Loaded by run.sh after 00_supabase_stub.sql, schema.sql, 10_fixtures.sql,
+-- billing.sql, the migration (twice), then schema.sql + billing.sql AGAIN, so the
+-- rules must survive re-runs. Every check raises on failure. Synthetic users only.
 
 -- F1: no bulk profile listing; narrow discovery only ---------------------------
 begin;
@@ -132,6 +123,65 @@ do $$ begin
   exception when insufficient_privilege then null;   -- 'Not authorized' (42501), as billing.sql raises it
   end;
   raise notice 'F3 ok: no email-based admin; admin RPCs refuse';
+end $$;
+rollback;
+
+
+-- B1: usernames can't differ only by case; exact lookup wins -------------------
+do $$ begin
+  begin
+    insert into auth.users(id, email, email_confirmed_at)
+      values ('00000000-0000-0000-0000-0000000000ff','imp@example.test', now());
+    insert into public.profiles(id, username) values ('00000000-0000-0000-0000-0000000000ff','ALICE.REAL');
+    raise exception 'B1 FAIL: a case-variant username was accepted';
+  exception when unique_violation then null;
+  end;
+  raise notice 'B1 ok: case-variant usernames rejected';
+end $$;
+
+-- S3: unfriending ends access to a shared library -----------------------------
+begin;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-00000000000b',true);
+set local role authenticated;
+delete from public.friendships where addressee_id = auth.uid() or requester_id = auth.uid();
+do $$ begin
+  if (select count(*) from public.libraries) <> 0 then
+    raise exception 'S3 FAIL: ex-friend can still read the shared library';
+  end if;
+  if (select count(*) from public.profiles where username = 'alice.real') <> 0 then
+    raise exception 'S3 FAIL: ex-friend can still read the profile';
+  end if;
+  raise notice 'S3 ok: unfriending ends library and profile access';
+end $$;
+rollback;
+
+-- Anonymous callers get nothing -------------------------------------------------
+begin;
+set local role anon;
+do $$ begin
+  if (select count(*) from public.profiles) <> 0 then raise exception 'ANON FAIL: anon read profiles'; end if;
+  begin
+    perform * from public.search_profiles('ali');
+    raise exception 'ANON FAIL: anon called search_profiles';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform * from public.find_profile('alice.real');
+    raise exception 'ANON FAIL: anon called find_profile';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'ANON ok: no profile rows and no RPC access for anon';
+end $$;
+rollback;
+
+-- Nobody edits someone else's profile -----------------------------------------
+begin;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000ee',true);
+set local role authenticated;
+do $$ begin
+  update public.profiles set display_name = 'pwned' where username = 'alice.real';
+  if found then raise exception 'PROFILE FAIL: edited another user''s profile'; end if;
+  raise notice 'PROFILE ok: cannot edit other profiles';
 end $$;
 rollback;
 
