@@ -466,9 +466,13 @@ grant execute on function public.admin_list_coupons(integer) to authenticated;
 grant execute on function public.admin_trial_ending(integer) to authenticated;
 
 -- ===========================================================================
--- Seed the admin. Run this AFTER hello@trexpanda.com has signed into the app
--- once (so its auth.users row exists). Re-run any time; it's idempotent.
+-- Admins are granted BY USER ID ONLY, by hand, never by matching an email.
+-- (An email-matched seed would hand admin to whoever registers that address
+-- first; with email auto-confirm on, that can be anyone.)
+--
+-- 1. Sign in to the app with the account that should be admin.
+-- 2. Dashboard -> Authentication -> Users: confirm it is yours, copy its UUID.
+-- 3. Run, replacing the placeholder:
+--      insert into public.admins(user_id) values ('<your-verified-user-uuid>')
+--      on conflict (user_id) do nothing;
 -- ===========================================================================
-insert into public.admins(user_id)
-  select id from auth.users where lower(email) = 'hello@trexpanda.com'
-  on conflict (user_id) do nothing;

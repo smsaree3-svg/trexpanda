@@ -27,15 +27,48 @@ Go to <https://supabase.com>, create a free project, and wait for it to finish
 provisioning.
 
 ### 2. Create the database tables
-In the dashboard: **SQL Editor → New query**, paste the contents of
-[`supabase/schema.sql`](supabase/schema.sql), and click **Run**. This creates
-the tables and the Row Level Security policies that keep each user's data
-private. Re-running it later is safe.
+In the dashboard: **SQL Editor → New query**, and run these three files in
+order, each as its own query:
 
-### 3. (Recommended) Turn off email confirmation for instant sign-in
-**Authentication → Providers → Email** → turn **Confirm email** off. With it on,
-new users must click a link in their inbox before they can sign in — the app
-handles that too, it's just an extra step.
+1. [`supabase/schema.sql`](supabase/schema.sql): tables and Row Level Security.
+2. [`supabase/billing.sql`](supabase/billing.sql): trials, subscriptions, coupons, admin tools.
+3. [`supabase/migrations/20261017_security_hardening.sql`](supabase/migrations/20261017_security_hardening.sql):
+   private profiles, consent-only friend requests, working library sharing.
+
+All three are safe to re-run. To grant yourself admin, follow the comment at the
+end of `billing.sql`: admin is granted by **user ID**, never by email address.
+Before changing policies, you can run the regression tests on a local Postgres
+with `supabase/tests/run.sh` (see the comments at the top of that script).
+
+### 3. Keep email confirmation ON, and set up an email sender
+**Authentication → Sign In / Providers → Email → Confirm email** must stay
+**on**. With it off, anyone can create an account under any address they don't
+own: someone else's, or your admin address.
+
+Confirmation emails need a real sender. Supabase's built-in mailer only
+delivers to members of your Supabase team (about 2 per hour), so set up
+**Authentication → Emails → SMTP Settings** before going live: Google Workspace
+(`smtp.gmail.com`, port 587, app password) or a transactional provider such as
+Resend, Postmark or AWS SES. Authenticate the sending domain with DKIM.
+
+**Authentication → URL Configuration**:
+
+- **Site URL**: `https://trexpanda.com` (where confirmation links land).
+- **Redirect URLs**: `http://localhost:8765/callback` (desktop Google sign-in),
+  `trexpanda://auth` (Android), `https://trexpanda.com/reset-password/` (password reset).
+
+**Authentication → Emails → Templates → Reset password**: replace the link with
+one that carries the token hash to the reset page, so it works no matter which
+device the email is opened on:
+
+```html
+<h2>Reset your Trexpanda password</h2>
+<p><a href="{{ .SiteURL }}/reset-password/?token_hash={{ .TokenHash }}&type=recovery">Choose a new password</a></p>
+<p>If you didn't ask for this, you can ignore this email.</p>
+```
+
+The desktop app's **Forgot password?** button sends this email, and
+`docs/reset-password/` (served at trexpanda.com) lets the user set the new password.
 
 ### 4. Point the app at your project
 Grab two values from **Project Settings → API**: the **Project URL** and the

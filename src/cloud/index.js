@@ -21,6 +21,21 @@ const { classifyFriendships, combineLibrarySnippets, isValidUsername, deriveUser
 
 const DEFAULT_LIBRARY_NAME = 'My Snippets';
 
+// Friend search needs at least this many characters. The server-side RPC
+// (search_profiles) enforces the same floor so the profile list can't be swept.
+const MIN_SEARCH_CHARS = 3;
+
+// Where password-reset emails send people. The page verifies the emailed
+// token_hash and lets the user choose a new password (docs/reset-password/).
+// It must be listed under Supabase → Authentication → URL Configuration.
+const PASSWORD_RESET_URL = 'https://trexpanda.com/reset-password/';
+
+/** True when PostgREST says an RPC doesn't exist yet (migration not applied). */
+function isMissingRpc(error) {
+  if (!error) return false;
+  return error.code === 'PGRST202' || /could not find the function/i.test(String(error.message || ''));
+}
+
 class CloudService {
   constructor(backend) {
     this.backend = backend;
@@ -281,6 +296,19 @@ class CloudService {
     return { needsConfirmation: !data.session };
   }
 
+  /**
+   * Email a password-reset link. Supabase answers the same way whether or not
+   * the address has an account, so this never reveals who is registered.
+   */
+  async requestPasswordReset({ email } = {}) {
+    const client = this._requireClient();
+    const addr = String(email || '').trim();
+    if (!addr || !addr.includes('@')) throw new Error('Enter the email address you signed up with.');
+    const { error } = await client.auth.resetPasswordForEmail(addr, { redirectTo: PASSWORD_RESET_URL });
+    if (error) throw error;
+    return { sent: true };
+  }
+
   async signIn({ email, password }) {
     const client = this._requireClient();
     const { data, error } = await client.auth.signInWithPassword({ email, password });
@@ -379,11 +407,18 @@ class CloudService {
 
   // -- friends ---------------------------------------------------------------
 
-  /** Look up people by username (prefix match), excluding yourself. */
+  /**
+   * Look up people by username (prefix match, 3+ characters), excluding yourself.
+   * Uses the narrow search_profiles RPC; falls back to the legacy table query
+   * only while the database migration hasn't been applied yet.
+   */
   async searchProfiles(query) {
     const client = this._requireClient();
     const q = String(query || '').trim();
-    if (!q) return [];
+    if (q.length < MIN_SEARCH_CHARS) return [];
+    const rpc = await client.rpc('search_profiles', { p_prefix: q });
+    if (!rpc.error) return rpc.data || [];
+    if (!isMissingRpc(rpc.error)) throw rpc.error;
     const me = await this._uid();
     const { data, error } = await client
       .from('profiles')
@@ -400,12 +435,22 @@ class CloudService {
     const client = this._requireClient();
     const me = await this._uid();
     const uname = String(username || '').trim();
-    const { data: prof, error: pErr } = await client
-      .from('profiles')
-      .select('id, username')
-      .ilike('username', uname)
-      .maybeSingle();
-    if (pErr) throw pErr;
+    let prof = null;
+    const rpc = await client.rpc('find_profile', { p_username: uname });
+    if (!rpc.error) {
+      prof = Array.isArray(rpc.data) ? (rpc.data[0] || null) : (rpc.data || null);
+    } else if (isMissingRpc(rpc.error)) {
+      // Legacy path, only until the database migration is applied.
+      const { data, error: pErr } = await client
+        .from('profiles')
+        .select('id, username')
+        .ilike('username', uname)
+        .maybeSingle();
+      if (pErr) throw pErr;
+      prof = data || null;
+    } else {
+      throw rpc.error;
+    }
     if (!prof) throw new Error(`No user found with username "${uname}".`);
     if (prof.id === me) throw new Error("You can't add yourself.");
     const { error } = await client.from('friendships').insert({
@@ -594,4 +639,4 @@ class CloudService {
   }
 }
 
-module.exports = { CloudService };
+module.exports = { CloudService, MIN_SEARCH_CHARS, PASSWORD_RESET_URL };

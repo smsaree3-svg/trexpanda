@@ -977,12 +977,26 @@ async function doSignUp() {
   btn.disabled = false; btn.textContent = 'Create account';
   if (!res.ok) { authError(res.error); return; }
   if (res.data && res.data.needsConfirmation) {
-    authError('Account created. Check your email to confirm, then sign in. (Tip: disable email confirmation in Supabase for instant sign-in.)');
+    // Switch tabs first: setAuthMode() clears the banner, so showing the
+    // message before it would hide the instruction the user needs.
     setAuthMode('signin');
+    $('si-email').value = email;
+    authError('Account created. We sent a confirmation link to ' + email + '. Open it, then sign in here. No email? Check spam, or try again in a few minutes.');
     return;
   }
   await refreshCloud();
   window.api.syncNow();
+}
+
+async function doForgotPassword() {
+  authError('');
+  const email = $('si-email').value.trim();
+  if (!email) { authError('Enter your email above, then choose "Forgot password?" again.'); return; }
+  const btn = $('btn-forgot'); btn.disabled = true;
+  const res = await cc('requestPasswordReset', { email });
+  btn.disabled = false;
+  if (!res.ok) { authError(res.error || 'Could not send the reset email.'); return; }
+  authError('If an account exists for ' + email + ', a password-reset link is on its way. It opens a page where you choose a new password.');
 }
 
 async function doGoogle() {
@@ -1069,6 +1083,7 @@ document.querySelectorAll('.authtab').forEach((t) =>
   t.addEventListener('click', () => setAuthMode(t.dataset.auth)));
 $('btn-google').addEventListener('click', doGoogle);
 $('btn-signin').addEventListener('click', doSignIn);
+$('btn-forgot').addEventListener('click', doForgotPassword);
 $('btn-signup').addEventListener('click', doSignUp);
 $('btn-signout').addEventListener('click', doSignOut);
 $('btn-add-friend').addEventListener('click', addFriend);

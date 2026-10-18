@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex" />
+<meta name="referrer" content="no-referrer" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'; connect-src https://yiltfbpjubflwdajzrhe.supabase.co; form-action 'none'; base-uri 'none'; frame-ancestors 'none'" />
+<title>Reset your Trexpanda password</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<style>
+  :root{--navy:#0a1633;--panel:#111f45;--line:rgba(255,255,255,.09);--text:#eaf0ff;--muted:#9fb0d0;
+    --grad:linear-gradient(100deg,#1b3bff 0%,#2f6bff 45%,#46b4ff 100%);--bad:#ff8a8a;--good:#7be0a6}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 700px at 80% -10%,#12285e 0%,transparent 60%),var(--navy);
+    color:var(--text);line-height:1.6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:32px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;margin-bottom:20px}
+  .brand img{width:30px;height:30px;border-radius:7px}
+  h1{font-size:22px;margin-bottom:8px}
+  p{color:var(--muted);font-size:15px}
+  label{display:block;font-size:14px;margin:18px 0 6px}
+  input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0b1838;color:var(--text);font:inherit}
+  button{margin-top:22px;width:100%;border:none;cursor:pointer;font:inherit;font-weight:600;padding:12px 20px;
+    border-radius:11px;background:var(--grad);color:#fff}
+  button[disabled]{opacity:.6;cursor:default}
+  .msg{margin-top:16px;font-size:14px}
+  .msg.bad{color:var(--bad)} .msg.good{color:var(--good)}
+  [hidden]{display:none !important}
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand"><img src="/icon.png" alt="" /> Trexpanda</div>
+    <h1>Choose a new password</h1>
+    <p id="intro">Checking your reset link…</p>
+    <form id="form" hidden>
+      <label for="pw1">New password</label>
+      <input id="pw1" type="password" autocomplete="new-password" minlength="8" required />
+      <label for="pw2">Repeat it</label>
+      <input id="pw2" type="password" autocomplete="new-password" minlength="8" required />
+      <button id="save" type="submit">Save new password</button>
+    </form>
+    <div id="msg" class="msg" role="status" aria-live="polite"></div>
+  </main>
+  <script src="reset.js"></script>
+</body>
+</html>
