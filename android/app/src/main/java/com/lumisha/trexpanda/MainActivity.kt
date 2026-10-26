@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sync: SyncManager
     private lateinit var realtime: RealtimeClient
 
-    private lateinit var liveChip: TextView
+    private lateinit var liveChip: View
     private lateinit var statusText: TextView
     private lateinit var signInButton: Button
     private lateinit var signOutButton: Button
