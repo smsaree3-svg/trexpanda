@@ -53,7 +53,7 @@ class TrexpandaAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
                 AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> onTyping(event)
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
-                AccessibilityEvent.TYPE_WINDOWS_CHANGED -> if (!keyboardVisible()) hideStrip()
+                AccessibilityEvent.TYPE_WINDOWS_CHANGED -> if (!keyboardVisible()) hideStrip() else repositionStrip()
             }
         } catch (_: Exception) {
             // Never crash someone else's text field.
@@ -150,7 +150,7 @@ class TrexpandaAccessibilityService : AccessibilityService() {
         strip?.let { return it }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setPadding(dp(8), dp(4), dp(8), dp(4))
         }
         val sv = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -174,7 +174,7 @@ class TrexpandaAccessibilityService : AccessibilityService() {
                 ellipsize = TextUtils.TruncateAt.END
                 setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setPadding(dp(12), dp(8), dp(12), dp(8))
+                setPadding(dp(12), dp(6), dp(12), dp(6))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(16).toFloat()
                     setColor(Color.parseColor("#2F6BFF"))
@@ -186,18 +186,52 @@ class TrexpandaAccessibilityService : AccessibilityService() {
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { marginEnd = dp(6) })
         }
+        val lp = stripLayout(sv) ?: run { hideStrip(); return }
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        val lp = WindowManager.LayoutParams(
+        if (stripShown) wm.updateViewLayout(sv, lp) else { wm.addView(sv, lp); stripShown = true }
+    }
+
+    /** Keep the strip glued to the keyboard's top edge when the keyboard moves or resizes. */
+    private fun repositionStrip() {
+        val sv = strip ?: return
+        if (!stripShown) return
+        val lp = stripLayout(sv) ?: run { hideStrip(); return }
+        try { (getSystemService(WINDOW_SERVICE) as WindowManager).updateViewLayout(sv, lp) } catch (_: Exception) {}
+    }
+
+    /**
+     * Place the strip over the keyboard's own top bar (its word-suggestion /
+     * toolbar row), in absolute screen coordinates: the letters and the text box
+     * being typed in both stay visible. (Measuring from the bottom of the screen
+     * was off by the navigation-bar height on phones with on-screen nav buttons,
+     * which put the strip over the keyboard's top row of letters.)
+     */
+    private fun stripLayout(sv: View): WindowManager.LayoutParams? {
+        val kbTop = keyboardTop() ?: return null
+        val screenW = resources.displayMetrics.widthPixels
+        sv.measure(
+            View.MeasureSpec.makeMeasureSpec(screenW, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        val h = sv.measuredHeight.takeIf { it > 0 } ?: dp(44)
+        return WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
+            h,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
-            y = keyboardHeight()
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = kbTop.coerceAtLeast(0)
+            if (android.os.Build.VERSION.SDK_INT >= 30) setFitInsetsTypes(0)
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
-        if (stripShown) wm.updateViewLayout(sv, lp) else { wm.addView(sv, lp); stripShown = true }
     }
 
     private fun hideStrip() {
@@ -207,12 +241,12 @@ class TrexpandaAccessibilityService : AccessibilityService() {
         stripShown = false
     }
 
-    /** Height of the on-screen keyboard from the bottom of the screen (0 if hidden). */
-    private fun keyboardHeight(): Int {
-        val ime = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD } ?: return 0
+    /** Top edge of the on-screen keyboard in screen pixels, or null when it's hidden. */
+    private fun keyboardTop(): Int? {
+        val ime = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD } ?: return null
         val r = Rect()
         ime.getBoundsInScreen(r)
-        return (resources.displayMetrics.heightPixels - r.top).coerceAtLeast(0)
+        return if (r.height() > 0) r.top else null
     }
 
     private fun keyboardVisible(): Boolean =
