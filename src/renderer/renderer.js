@@ -22,6 +22,8 @@ document.querySelectorAll('.tab').forEach((tab) => {
 
 // ---- render ---------------------------------------------------------------
 function render() {
+  const v = document.getElementById('app-version');
+  if (v && state.version) v.textContent = 'Trexpanda version ' + state.version;
   renderStatus();
   renderSnippets();
   renderPlan();

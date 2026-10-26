@@ -188,8 +188,11 @@ class MainActivity : AppCompatActivity() {
             signedIn -> "Signed in as ${auth.userEmail ?: "you"}"
             else -> "Not signed in"
         }
-        anyKeyboardButton.text = if (isAnyKeyboardModeOn())
-            "Works with any keyboard: On (tap to manage)" else "Use with Gboard or any keyboard"
+        anyKeyboardButton.text = when {
+            !isAnyKeyboardModeOn() -> "Use with Gboard or any keyboard"
+            isAnyKeyboardModeRunning() -> "Works with any keyboard: On (tap to manage)"
+            else -> "Any-keyboard mode was stopped by the phone: tap to fix"
+        }
         val items = store.getPersonal().sortedBy { it.trigger ?: "" }
         adapter.submit(items)
         emptyState.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
@@ -240,13 +243,29 @@ class MainActivity : AppCompatActivity() {
                 "What it never does: read password fields, store, log or send anything you " +
                 "type, or act on anything other than the field you are typing in.\n\n" +
                 "On the next screen, tap \"Trexpanda (any keyboard)\" and turn it on. " +
-                "You can turn it off there at any time."
+                "You can turn it off there at any time.\n\n" +
+                "On Xiaomi, Oppo or Vivo phones, also allow Autostart and set Battery saver " +
+                "to \"No restrictions\" (Battery settings), or the phone may stop it."
             )
             .setPositiveButton("Open settings") { _, _ ->
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
+            .setNeutralButton("Battery settings") { _, _ ->
+                // Xiaomi, Oppo, Vivo etc. stop background services unless the app
+                // is allowed to run: open this app's settings page.
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.fromParts("package", packageName, null)))
+            }
             .setNegativeButton("Not now", null)
             .show()
+    }
+
+    /** Turned on AND actually running (Android lists only bound, working services here). */
+    private fun isAnyKeyboardModeRunning(): Boolean {
+        val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+        val me = TrexpandaAccessibilityService::class.java.name
+        return am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { it.resolveInfo?.serviceInfo?.let { si -> si.packageName == packageName && si.name == me } == true }
     }
 
     private fun isAnyKeyboardModeOn(): Boolean {

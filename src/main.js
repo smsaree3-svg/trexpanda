@@ -651,6 +651,7 @@ function pushState() {
     personal: store.getPersonal(),
     team: store.getTeamCache(),
     settings: store.getSettings(),
+    version: app.getVersion(),
     stats,
     plan: currentPlan(),
     engine: {

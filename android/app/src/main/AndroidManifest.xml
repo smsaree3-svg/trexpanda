@@ -50,6 +50,7 @@
         <service
             android:name=".TrexpandaAccessibilityService"
             android:exported="false"
+            android:process=":anykeyboard"
             android:label="@string/a11y_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
