@@ -13,24 +13,37 @@ val localProps = Properties().apply {
 }
 fun secret(key: String): String = localProps.getProperty(key) ?: System.getenv(key) ?: ""
 
-// Release signing. The keystore and its passwords live in keystore.properties
-// (git-ignored), so no signing material is ever committed. Without that file the
-// project still builds debug normally.
+// Store version. CI passes these (-PtrexVersionCode / -PtrexVersionName); local
+// builds use the defaults. versionCode must keep increasing for every Play upload,
+// and stays above 11, the version of the APK already published on trexpanda.com.
+val trexVersionCode = (project.findProperty("trexVersionCode") as String?)?.toInt() ?: 12
+val trexVersionName = (project.findProperty("trexVersionName") as String?) ?: "0.3.5"
+
+// Release (upload-key) signing. Locally: keystore.properties (git-ignored).
+// In CI: ANDROID_KEYSTORE_FILE / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
+// ANDROID_KEY_PASSWORD environment variables from repository secrets. No signing
+// material is ever committed. Without either, debug builds still work.
 val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
+fun signingValue(propKey: String, envKey: String): String? =
+    (keystoreProps[propKey] as String?) ?: System.getenv(envKey)?.takeIf { it.isNotBlank() }
+val releaseStoreFile = signingValue("storeFile", "ANDROID_KEYSTORE_FILE")
+val hasReleaseSigning = releaseStoreFile != null
 
 android {
     namespace = "com.lumisha.trexpanda"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.lumisha.trexpanda"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        // Google Play requires new apps and updates to target Android 16 (API 36)
+        // from 31 Aug 2026.
+        targetSdk = 36
+        versionCode = trexVersionCode
+        versionName = trexVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "SUPABASE_URL", "\"${secret("SUPABASE_URL")}\"")
@@ -43,11 +56,11 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropsFile.exists()) {
-                storeFile = rootProject.file(keystoreProps["storeFile"] as String)
-                storePassword = keystoreProps["storePassword"] as String
-                keyAlias = keystoreProps["keyAlias"] as String
-                keyPassword = keystoreProps["keyPassword"] as String
+            if (hasReleaseSigning) {
+                storeFile = rootProject.file(releaseStoreFile!!)
+                storePassword = signingValue("storePassword", "ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "ANDROID_KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "ANDROID_KEY_PASSWORD")
             }
         }
     }
@@ -56,7 +69,7 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            if (keystorePropsFile.exists()) signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
         }
     }
 

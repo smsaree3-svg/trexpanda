@@ -1,0 +1,39 @@
+name: iOS — compile & test
+
+# Builds the iPhone app and keyboard for the simulator and runs the engine
+# conformance tests. No signing or secrets needed.
+on:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios-*.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v5
+      - name: Generate the Xcode project
+        run: brew install xcodegen && xcodegen generate
+      - name: Build and test
+        shell: bash
+        run: |
+          set -o pipefail
+          dest=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for k,v in d.items() if "iOS" in k for x in v if x["name"].startswith("iPhone")))')
+          xcodebuild test -project Trexpanda.xcodeproj -scheme Trexpanda \
+            -destination "id=$dest" CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/xcode.log"
+      - name: Report build errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          grep -E 'error:|\*\* .* FAILED|failed \(' "$RUNNER_TEMP/xcode.log" | sort -u | head -60 > "$RUNNER_TEMP/errors.txt" || true
+          msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Xcode failure::${msg}"
+          cat "$RUNNER_TEMP/errors.txt" >> "$GITHUB_STEP_SUMMARY"

@@ -977,12 +977,29 @@ async function doSignUp() {
   btn.disabled = false; btn.textContent = 'Create account';
   if (!res.ok) { authError(res.error); return; }
   if (res.data && res.data.needsConfirmation) {
-    authError('Account created. Check your email to confirm, then sign in. (Tip: disable email confirmation in Supabase for instant sign-in.)');
+    // Switch tabs first: setAuthMode() clears the banner, so showing the
+    // message before it would hide the instruction the user needs.
     setAuthMode('signin');
+    $('si-email').value = email;
+    authError('Account created. We sent a confirmation link to ' + email + '. Open it, then sign in here. No email? Check spam, or try again in a few minutes.');
     return;
   }
   await refreshCloud();
   window.api.syncNow();
+}
+
+async function doForgotPassword() {
+  authError('');
+  const email = $('si-email').value.trim();
+  if (!email) { authError('Enter your email above, then choose "Forgot password?" again.'); return; }
+  const btn = $('btn-forgot'); btn.disabled = true;
+  const res = await cc('requestPasswordReset', { email });
+  btn.disabled = false;
+  // Same message whether or not the address has an account (and for rate limits,
+  // which Supabase only applies to existing accounts), so this can't be used to
+  // check who is registered. Only a malformed address gets its own message.
+  if (!res.ok && /Enter the email/.test(res.error || '')) { authError(res.error); return; }
+  authError('If an account exists for ' + email + ', a password-reset link is on its way. It opens a page where you choose a new password. Nothing after a few minutes? Check spam, then try again later.');
 }
 
 async function doGoogle() {
@@ -997,6 +1014,22 @@ async function doGoogle() {
   if (!res.ok) { authError(res.error || 'Google sign-in failed.'); return; }
   await refreshCloud();
   window.api.syncNow();
+}
+
+async function doDeleteAccount() {
+  const ok = window.confirm(
+    'Delete your Trexpanda account?\n\n' +
+    'This permanently deletes your account and everything stored in the cloud: ' +
+    'synced snippets, shared libraries, friends and profile. It cannot be undone.\n\n' +
+    'Snippets on this computer stay on this computer.');
+  if (!ok) return;
+  const btn = $('btn-delete-account'); btn.disabled = true;
+  const res = await cc('deleteAccount');
+  btn.disabled = false;
+  if (!res.ok) { window.alert(res.error || 'Could not delete your account. Please try again.'); return; }
+  if (res.data && res.data.ok === false) { window.alert(res.data.message || 'Your account could not be deleted yet.'); return; }
+  await refreshCloud();
+  window.alert('Your account has been deleted.');
 }
 
 async function doSignOut() {
@@ -1069,8 +1102,10 @@ document.querySelectorAll('.authtab').forEach((t) =>
   t.addEventListener('click', () => setAuthMode(t.dataset.auth)));
 $('btn-google').addEventListener('click', doGoogle);
 $('btn-signin').addEventListener('click', doSignIn);
+$('btn-forgot').addEventListener('click', doForgotPassword);
 $('btn-signup').addEventListener('click', doSignUp);
 $('btn-signout').addEventListener('click', doSignOut);
+$('btn-delete-account').addEventListener('click', doDeleteAccount);
 $('btn-add-friend').addEventListener('click', addFriend);
 $('add-friend-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') addFriend(); });
 $('btn-publish-cloud').addEventListener('click', publishCloud);

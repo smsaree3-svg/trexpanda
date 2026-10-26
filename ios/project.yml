@@ -14,13 +14,17 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "0.2.0"
+    MARKETING_VERSION: "0.3.5"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     # Set this to your Apple Developer Team ID (Membership page), or pick the
     # team in Xcode's Signing & Capabilities tab after generating.
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
+    # Cloud sync. CI passes the real values (they're public client values,
+    # protected by row-level security); left empty, the app works offline only.
+    SUPABASE_URL: ""
+    SUPABASE_ANON_KEY: ""
     TARGETED_DEVICE_FAMILY: "1,2"
 
 targets:
@@ -36,6 +40,7 @@ targets:
         INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/Trexpanda.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_USER_SCRIPT_SANDBOXING: "YES"
     dependencies:
       - target: TrexpandaKeyboard
@@ -51,6 +56,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.lumisha.trexpanda.keyboard
         INFOPLIST_FILE: Keyboard/Info.plist
         CODE_SIGN_ENTITLEMENTS: Keyboard/Keyboard.entitlements
+        APPLICATION_EXTENSION_API_ONLY: "YES"
 
   # Hostless logic-test bundle for the ExpansionSpecificationV1 conformance suite.
   # It compiles the two pure-Foundation sources directly (no @testable import, no

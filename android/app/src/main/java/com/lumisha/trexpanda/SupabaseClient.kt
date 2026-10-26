@@ -5,6 +5,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.IOException
 
 /**
@@ -65,6 +66,30 @@ class SupabaseClient(private val auth: AuthManager) {
             }
         }
         return rows.size
+    }
+
+    /**
+     * Permanently delete the signed-in user's account and all their cloud data
+     * (the delete_my_account RPC). Returns null on success, or a user-facing
+     * message when the server refuses (for example, an active subscription).
+     */
+    @Throws(IOException::class)
+    fun deleteAccount(): String? {
+        val token = auth.freshAccessToken() ?: throw IOException("Not signed in.")
+        val req = Request.Builder()
+            .url(SupabaseConfig.restUrl("rpc/delete_my_account"))
+            .addHeader("apikey", SupabaseConfig.anonKey)
+            .addHeader("Authorization", "Bearer $token")
+            .addHeader("Content-Type", "application/json")
+            .post("{}".toRequestBody(JSON))
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val body = resp.body?.string() ?: ""
+            if (!resp.isSuccessful) throw IOException("Delete failed (${resp.code}).")
+            val json = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+            return if (json.optBoolean("ok", false)) null
+            else json.optString("message", "Your account could not be deleted. Please contact hello@trexpanda.com.")
+        }
     }
 
     companion object {
