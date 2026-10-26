@@ -48,23 +48,24 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
         candidatesStart: Int, candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        engine.reset()
-        clearSuggestions()
+        // Android reports a selection change after every character we commit, so
+        // this must NOT forget what was typed. Matching reads the real text before
+        // the caret instead; here we only refresh the suggestion strip.
+        if (newSelStart != newSelEnd) clearSuggestions() else refreshSuggestions()
     }
 
     // ---- key events ----------------------------------------------------------
 
     override fun onText(text: String) {
         val ic = currentInputConnection ?: return
-        ic.beginBatchEdit()
-        try {
-            for (ch in text) {
-                ic.commitText(ch.toString(), 1)
-                val action = engine.onChar(ch)
-                if (action != null) expand(ic, action)
-            }
-        } finally {
-            ic.endBatchEdit()
+        for (ch in text) {
+            ic.commitText(ch.toString(), 1)
+            // Stateless: look at the text actually before the caret, so cursor
+            // callbacks, autocorrect in the app, or text typed earlier can't
+            // desync a private buffer.
+            val before = ic.getTextBeforeCursor(engine.maxTriggerLen(), 0) ?: continue
+            val action = engine.matchSuffix(before)
+            if (action != null) expand(ic, action)
         }
         refreshSuggestions()
     }
@@ -129,7 +130,8 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
     }
 
     private fun refreshSuggestions() {
-        val (token, items) = engine.suggestions()
+        val before = currentInputConnection?.getTextBeforeCursor(64, 0) ?: ""
+        val (token, items) = engine.suggestionsFrom(before)
         currentToken = token
         keyboard?.setSuggestions(items)
     }
