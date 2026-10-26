@@ -456,7 +456,8 @@ grant execute on function public.redeem_coupon(text) to authenticated;
 -- Revoke from PUBLIC too: Postgres grants EXECUTE to PUBLIC on new functions by
 -- default, so revoking from authenticated alone would still leave it callable.
 grant execute on function public.is_admin() to authenticated;
-revoke execute on function public.is_admin(uuid) from public, authenticated;
+revoke execute on function public.is_admin(uuid) from public, anon, authenticated;
+revoke execute on function public.is_paid(uuid)  from public, anon, authenticated;
 grant execute on function public.admin_create_coupon(text,text,integer,integer,timestamptz,text) to authenticated;
 grant execute on function public.admin_create_coupons_bulk(integer,text,text,integer,integer,timestamptz,text) to authenticated;
 grant execute on function public.admin_grant_user(uuid,integer,text) to authenticated;

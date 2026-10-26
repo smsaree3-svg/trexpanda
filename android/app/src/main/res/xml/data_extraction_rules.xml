@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Back up snippets, but never the sign-in session (it can't be reused on another device). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="trexpanda_auth.xml" />
+        <exclude domain="sharedpref" path="trexpanda_owner.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="trexpanda_auth.xml" />
+        <exclude domain="sharedpref" path="trexpanda_owner.xml" />
+    </device-transfer>
+</data-extraction-rules>

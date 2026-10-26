@@ -36,9 +36,8 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        // Reload snippets each time the keyboard appears so edits (and synced
-        // changes pushed from other devices) take effect.
-        engine.setSnippets(store.getPersonal())
+        // Reload snippets when the app or a sync has saved changes since last time.
+        reloadIfChanged()
         engine.reset()
         clearSuggestions()
     }
@@ -73,7 +72,9 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
     override fun onBackspace() {
         val ic = currentInputConnection ?: return
         val selected = ic.getSelectedText(0)
-        if (!selected.isNullOrEmpty()) ic.commitText("", 1) else ic.deleteSurroundingText(1, 0)
+        // A real DEL key event: removes a whole emoji/grapheme and works in apps
+        // that listen for key events.
+        if (!selected.isNullOrEmpty()) ic.commitText("", 1) else sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
         engine.onBackspace()
         refreshSuggestions()
     }
@@ -84,11 +85,13 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
         clearSuggestions()
         val info = currentInputEditorInfo
         val action = info?.imeOptions?.and(EditorInfo.IME_MASK_ACTION) ?: EditorInfo.IME_ACTION_NONE
-        val multiline = ((info?.inputType ?: 0) and android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
-        if (!multiline && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+        val noEnterAction = ((info?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
+        if (!noEnterAction && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             ic.performEditorAction(action)
         } else {
-            ic.commitText("\n", 1)
+            // A real Enter key: multi-line fields insert a newline, single-line
+            // fields and web inputs get the Enter their listeners expect.
+            sendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER)
         }
     }
 
@@ -108,6 +111,16 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
     }
 
     // ---- helpers -------------------------------------------------------------
+
+    private var snippetsStamp = -1L
+
+    private fun reloadIfChanged() {
+        val stamp = java.io.File(filesDir, "snippets.json").lastModified()
+        if (stamp == snippetsStamp) return
+        snippetsStamp = stamp
+        store = SnippetStore(this)
+        engine.setSnippets(store.getPersonal())
+    }
 
     private fun expand(ic: InputConnection, action: ExpanderEngine.Action) {
         ic.beginBatchEdit()

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Trexpanda" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.Trexpanda" parent="Theme.Material3.Dark.NoActionBar">
         <item name="colorPrimary">@color/brand</item>
         <item name="colorOnPrimary">@color/brandOn</item>
         <item name="colorPrimaryContainer">@color/brandDark</item>

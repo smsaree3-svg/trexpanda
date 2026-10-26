@@ -9,6 +9,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -33,6 +34,7 @@ class RealtimeClient(
         .build()
 
     private val main = Handler(Looper.getMainLooper())
+    private val io = Executors.newSingleThreadExecutor()
     private val ref = AtomicInteger(0)
 
     @Volatile private var ws: WebSocket? = null
@@ -65,16 +67,25 @@ class RealtimeClient(
 
     private fun connect() {
         if (!active) return
-        val token = auth.freshAccessToken() ?: return
-        val base = SupabaseConfig.url.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://")
-        val url = "$base/realtime/v1/websocket?apikey=${SupabaseConfig.anonKey}&vsn=1.0.0"
-        val req = Request.Builder().url(url).build()
-        ws = client.newWebSocket(req, Listener(token))
+        // Token refresh is a network call: never on the main thread.
+        io.execute {
+            if (!active) return@execute
+            val token = auth.freshAccessToken()
+            if (token == null) { main.post { scheduleReconnect() }; return@execute }
+            val base = SupabaseConfig.url.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://")
+            val url = "$base/realtime/v1/websocket?apikey=${SupabaseConfig.anonKey}&vsn=1.0.0"
+            val req = Request.Builder().url(url).build()
+            main.post {
+                if (!active || ws != null) return@post
+                ws = client.newWebSocket(req, Listener(token))
+            }
+        }
     }
 
     private fun scheduleReconnect() {
         if (!active) return
         joined = false
+        ws = null
         main.removeCallbacks(heartbeat)
         main.postDelayed({ connect() }, reconnectDelayMs)
         reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(30_000)
@@ -93,6 +104,7 @@ class RealtimeClient(
         private val topic = "realtime:public:snippets"
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            if (webSocket !== ws) { webSocket.cancel(); return } // a stale socket
             reconnectDelayMs = 2000L
             val uid = auth.userId ?: return
             val changes = org.json.JSONArray().put(
@@ -117,19 +129,22 @@ class RealtimeClient(
                 val event = JSONObject(text).optString("event")
                 when (event) {
                     "phx_reply" -> joined = true
-                    "postgres_changes" -> onChange()
-                    "phx_error", "phx_close" -> scheduleReconnect()
+                    "postgres_changes" -> if (webSocket === ws) onChange()
+                    "phx_error", "phx_close" -> if (webSocket === ws) {
+                        webSocket.cancel()
+                        main.post { scheduleReconnect() }
+                    }
                 }
             } catch (_: Exception) { /* ignore malformed frames */ }
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             Log.w(TAG, "realtime failure", t)
-            scheduleReconnect()
+            if (webSocket === ws) main.post { scheduleReconnect() }
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (active) scheduleReconnect()
+            if (webSocket === ws && active) main.post { scheduleReconnect() }
         }
     }
 

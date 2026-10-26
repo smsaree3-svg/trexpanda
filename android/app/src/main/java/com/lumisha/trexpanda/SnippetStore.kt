@@ -2,6 +2,7 @@ package com.lumisha.trexpanda
 
 import android.content.Context
 import org.json.JSONObject
+import android.util.AtomicFile
 import java.io.File
 
 /**
@@ -15,6 +16,7 @@ import java.io.File
 class SnippetStore(context: Context) {
 
     private val file: File = File(context.filesDir, FILE_NAME)
+    private val atomic = AtomicFile(file)
     private val lock = Any()
 
     private var live: MutableList<Snippet> = mutableListOf()
@@ -29,7 +31,7 @@ class SnippetStore(context: Context) {
         tombstones = mutableListOf()
         if (!file.exists()) return@synchronized
         try {
-            val root = JSONObject(file.readText())
+            val root = JSONObject(String(atomic.readFully(), Charsets.UTF_8))
             live = SnippetJson.snippetsFromLocalArray(root.optJSONArray("live") ?: org.json.JSONArray())
                 .toMutableList()
             val now = System.currentTimeMillis()
@@ -48,7 +50,23 @@ class SnippetStore(context: Context) {
             put("live", SnippetJson.snippetsToLocalArray(live))
             put("tombstones", SnippetJson.tombstonesToArray(tombstones))
         }
-        file.writeText(root.toString())
+        // Atomic: readers (keyboard, any-keyboard mode) never see a half-written
+        // file, and a crash mid-write can't wipe the user's snippets.
+        val out = atomic.startWrite()
+        try {
+            out.write(root.toString().toByteArray(Charsets.UTF_8))
+            atomic.finishWrite(out)
+        } catch (e: Exception) {
+            atomic.failWrite(out)
+            throw e
+        }
+    }
+
+    /** Forget all local snippets (used when a different account signs in). */
+    fun clearAll() = synchronized(lock) {
+        live = mutableListOf()
+        tombstones = mutableListOf()
+        persist()
     }
 
     /** The current live snippets (what the keyboard expands and the UI lists). */

@@ -170,7 +170,8 @@ class ExpanderEngine(
      * could reset. Longest matching trigger wins.
      */
     fun matchSuffix(textBeforeCursor: CharSequence): Action? {
-        val text = textBeforeCursor.toString().lowercase()
+        // Only the tail can hold a trigger; don't lowercase a whole long note per keystroke.
+        val text = textBeforeCursor.takeLast(maxTrigger).toString().lowercase()
         val best = bestMatch(text) ?: return null
         val snippet = best.snippet
         val rendered = render(snippet.replacement)

@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity() {
         deleteAccountButton.setOnClickListener { confirmDeleteAccount() }
         anyKeyboardButton.setOnClickListener { explainAnyKeyboardMode() }
         signOutButton.setOnClickListener { realtime.stop(); auth.signOut(); refresh() }
-        syncButton.setOnClickListener { runSync() }
+        syncButton.setOnClickListener { runSync(manual = true) }
         addButton.setOnClickListener { showEditDialog(null) }
         enableKeyboardButton.setOnClickListener {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -108,7 +108,8 @@ class MainActivity : AppCompatActivity() {
             (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
         }
 
-        handleAuthRedirect(intent)
+        // Only on a fresh start: after a rotation the code was already exchanged.
+        if (savedInstanceState == null) handleAuthRedirect(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -135,22 +136,37 @@ class MainActivity : AppCompatActivity() {
         val data = intent?.data ?: return
         if (data.scheme == "trexpanda") {
             Thread {
-                val ok = auth.completeSignIn(data)
+                val ok = try { auth.completeSignIn(data) } catch (_: Exception) { false }
+                if (ok) keepLocalSnippetsPrivateToAccount()
                 runOnUiThread {
-                    toast(if (ok) "Signed in." else "Sign-in failed.")
+                    toast(if (ok) "Signed in." else "Sign-in failed. Check your connection and try again.")
                     refresh()
-                    if (ok) { runSync(); realtime.start() }
+                    if (ok) { runSync(manual = true); realtime.start() }
                 }
             }.start()
         }
     }
 
-    private fun runSync() {
+    /**
+     * Snippets on this phone belong to the account that synced them. If a
+     * DIFFERENT account signs in, start it clean, so one person's snippets are
+     * never uploaded into someone else's account.
+     */
+    private fun keepLocalSnippetsPrivateToAccount() {
+        val uid = auth.userId ?: return
+        val owner = getSharedPreferences("trexpanda_owner", MODE_PRIVATE)
+        val last = owner.getString("uid", null)
+        if (last != null && last != uid) store.clearAll()
+        owner.edit().putString("uid", uid).apply()
+    }
+
+    /** Sync now. Only a sync the user asked for (or a failure) shows a message. */
+    private fun runSync(manual: Boolean = false) {
         syncButton.isEnabled = false
         sync.sync { success, message ->
             runOnUiThread {
                 syncButton.isEnabled = true
-                if (message != null) toast(message)
+                if (message != null && (manual || !success) && message != "Sync already in progress.") toast(message)
                 refresh()
             }
         }
@@ -346,6 +362,9 @@ class MainActivity : AppCompatActivity() {
                 val updated = (existing ?: Snippet(id = "", trigger = trigger)).copy(
                     trigger = trigger,
                     replacement = replacement,
+                    // The phone edits plain text; drop stale rich text when the text
+                    // changed, or the desktop would keep typing the old version.
+                    html = if (existing != null && existing.replacement != replacement) null else existing?.html,
                     label = label,
                     enabled = enabledCheck.isChecked,
                 )

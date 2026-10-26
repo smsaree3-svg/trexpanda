@@ -17,10 +17,18 @@ struct SupabaseAPI {
 
     func pullSnippets() async throws -> [Snippet] {
         let (token, uid) = try await credentials()
-        let url = AppConfig.restURL("snippets?user_id=eq.\(uid)&select=id,trigger,replacement,label,html,enabled,updated_at,deleted_at")
-        let data = try await send(url, method: "GET", token: token, body: nil)
-        let rows = (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
-        return rows.compactMap(Self.snippet(fromRow:))
+        // Page through: the server caps each response at `page` rows.
+        let page = 1000
+        var offset = 0
+        var all: [Snippet] = []
+        while true {
+            let url = AppConfig.restURL("snippets?user_id=eq.\(uid)&select=id,trigger,replacement,label,html,enabled,updated_at,deleted_at&order=id&limit=\(page)&offset=\(offset)")
+            let data = try await send(url, method: "GET", token: token, body: nil)
+            let rows = (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+            all += rows.compactMap(Self.snippet(fromRow:))
+            if rows.count < page { return all }
+            offset += page
+        }
     }
 
     func pushSnippets(_ rows: [Snippet]) async throws {
@@ -90,7 +98,7 @@ struct SupabaseAPI {
     }
 
     static func snippet(fromRow r: [String: Any]) -> Snippet? {
-        guard let id = r["id"] as? String else { return nil }
+        guard let id = (r["id"] as? String)?.lowercased() else { return nil }
         return Snippet(id: id,
                        trigger: (r["trigger"] as? String) ?? "",
                        replacement: (r["replacement"] as? String) ?? "",

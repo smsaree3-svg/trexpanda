@@ -4,6 +4,7 @@
 
 let state = { personal: [], team: [], settings: {}, stats: {}, engine: {}, plan: { plan: 'free', isPro: false, limit: 20 } };
 let editIndex = -1; // -1 = new snippet
+let editId = null;  // id of the snippet being edited: a sync can reorder the list meanwhile
 
 const $ = (id) => document.getElementById(id);
 
@@ -281,6 +282,7 @@ function openEditor(index) {
   }
   editIndex = index;
   const s = index >= 0 ? state.personal[index] : { trigger: '', replacement: '', enabled: true };
+  editId = index >= 0 ? (s.id || null) : null;
   $('modal-title').textContent = index >= 0 ? 'Edit snippet' : 'New snippet';
   $('edit-trigger').value = s.trigger || '';
   // The "Expands to" field is now a rich-text editor. Load stored HTML if the
@@ -360,6 +362,12 @@ async function saveSnippet() {
   const editor = $('edit-repl');
   const html = sanitizeHtml(editor.innerHTML);
   const text = editor.innerText; // plain-text fallback (preserves line breaks)
+  // Re-find the row by id: a background sync may have changed the list since the
+  // editor opened, and the old position could now be a different snippet.
+  if (editIndex >= 0 && editId) {
+    const now = (state.personal || []).findIndex((p) => p && p.id === editId);
+    editIndex = now; // -1 if it was deleted elsewhere: save as a new snippet
+  }
   const snippet = {
     trigger,
     replacement: text,

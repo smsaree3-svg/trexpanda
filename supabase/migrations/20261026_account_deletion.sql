@@ -25,7 +25,7 @@ begin
   if exists (
     select 1 from public.subscriptions s
     where s.user_id = v_uid
-      and s.status in ('active', 'trialing', 'past_due', 'unpaid')
+      and s.status in ('active', 'trialing', 'past_due', 'unpaid', 'incomplete')
       and not coalesce(s.cancel_at_period_end, false)
   ) then
     return jsonb_build_object(

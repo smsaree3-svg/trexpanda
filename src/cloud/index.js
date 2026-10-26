@@ -64,8 +64,15 @@ class CloudService {
       user: null,
     };
     if (!this.configured()) return base;
-    const { data } = await this.client.auth.getSession();
+    const { data, error } = await this.client.auth.getSession();
     const session = data && data.session;
+    if (!session && error) {
+      // Could not refresh (usually offline). That is NOT "signed out": callers
+      // keep their cached state instead of locking the user out.
+      const e = new Error('Cloud unreachable: ' + (error.message || 'offline'));
+      e.offline = true;
+      throw e;
+    }
     if (!session) return base;
     const user = session.user;
     let profile = null;
@@ -360,7 +367,9 @@ class CloudService {
 
   async signOut() {
     if (!this.configured()) return { ok: true };
-    await this.client.auth.signOut();
+    // A global sign-out needs the network; if it fails, still sign out on this device.
+    const { error } = await this.client.auth.signOut();
+    if (error) await this.client.auth.signOut({ scope: 'local' }).catch(() => {});
     return { ok: true };
   }
 

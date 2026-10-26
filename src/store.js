@@ -87,7 +87,7 @@ function normalizeSnippet(raw, origin) {
       typeof a.data === 'string' && a.data) {
     out.attachment = {
       type: a.type,
-      name: typeof a.name === 'string' ? a.name : (a.type === 'image' ? 'image.png' : 'file'),
+      name: safeFileName(typeof a.name === 'string' ? a.name : '', a.type === 'image' ? 'image.png' : 'file'),
       mime: typeof a.mime === 'string' ? a.mime : '',
       data: a.data, // base64, no data-URL prefix
     };
@@ -199,6 +199,17 @@ function isoAt(ms) {
   return new Date(ms).toISOString();
 }
 
+/**
+ * A safe bare file name for an attachment. Names come from other people's shared
+ * libraries, so strip any directory part ("..\\..\\Startup\\x.bat") and any
+ * character that could matter to a shell or a path.
+ */
+function safeFileName(name, fallback = 'attachment') {
+  const base = String(name || '').split(/[\\/]/).pop();
+  const clean = base.replace(/[^\w.\- ]+/g, '_').replace(/^[.\s]+/, '').slice(0, 120);
+  return clean || fallback;
+}
+
 /** A stable UUID for a new snippet (crypto when available, else a fallback). */
 function genSnippetId() {
   try {
@@ -294,6 +305,26 @@ function mergeSnippetsForSync({ live = [], tombstones = [], remote = [], now = D
   }
   const remoteById = new Map();
   for (const r of remote) if (r && r.id) remoteById.set(r.id, r);
+
+  // Same trigger under two ids (e.g. ";addr" created separately on the PC and
+  // the phone before they ever synced): treat them as ONE snippet under the
+  // cloud's id, keeping whichever version is newer. Otherwise both copies live
+  // on every device and editing one appears to do nothing.
+  const remoteOnlyByTrigger = new Map();
+  for (const r of remoteById.values()) {
+    if (!r.deleted_at && r.trigger && !local.has(r.id)) remoteOnlyByTrigger.set(String(r.trigger).toLowerCase(), r);
+  }
+  for (const [id, l] of [...local.entries()]) {
+    if (l.state !== 'live' || remoteById.has(id) || !l.rec || !l.rec.trigger) continue;
+    const r = remoteOnlyByTrigger.get(String(l.rec.trigger).toLowerCase());
+    if (!r) continue;
+    remoteOnlyByTrigger.delete(String(l.rec.trigger).toLowerCase());
+    local.delete(id);
+    if (l.ts > tsMs(r.updated_at)) {
+      local.set(r.id, { state: 'live', ts: l.ts, rec: { ...l.rec, id: r.id } }); // local newer: push under cloud id
+    }
+    // else: the cloud copy is adopted as-is.
+  }
 
   const ids = new Set([...local.keys(), ...remoteById.keys()]);
   const newLive = [];
@@ -419,7 +450,33 @@ class Store {
       return s;
     });
     if (fixed) this.backend.set('personalSnippets', out);
+    // A deletion record with a non-uuid id would make the server reject every upload.
+    const tombs = this.getSnippetTombstones();
+    const goodTombs = tombs.filter((t) => t && UUID_RE.test(String(t.id)));
+    if (goodTombs.length !== tombs.length) this.setSnippetTombstones(goodTombs);
     return fixed;
+  }
+
+  /**
+   * Snippet ids are unique across ALL accounts on the server. When a different
+   * account signs in on this computer, give the local snippets fresh ids so
+   * they become this account's (uploading the old ids would be rejected and
+   * break sync). Returns true if the snippets were re-keyed.
+   */
+  adoptForAccount(uid) {
+    if (!uid) return false;
+    const owner = this.backend.get('personalOwner', null);
+    let changed = false;
+    if (owner && owner !== uid) {
+      const iso = isoAt(Date.now());
+      const list = this.getPersonal().map((s) => (s && typeof s === 'object'
+        ? { ...s, id: genSnippetId(), updatedAt: iso } : s));
+      this.backend.set('personalSnippets', list);
+      this.setSnippetTombstones([]);
+      changed = true;
+    }
+    if (owner !== uid) this.backend.set('personalOwner', uid);
+    return changed;
   }
 
   /** Overwrite personal snippets + tombstones with a merged sync result (raw). */
@@ -533,5 +590,5 @@ class Store {
 
 module.exports = {
   normalizeSnippet, sanitizeUntrustedHtml, mergeSnippets, combineShared, parseLibrary,
-  mergeSnippetsForSync, genSnippetId, Store,
+  mergeSnippetsForSync, genSnippetId, safeFileName, Store,
 };

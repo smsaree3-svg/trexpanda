@@ -125,6 +125,9 @@ final class ExpanderEngine {
     private func builtinToken(_ name: String) -> String? {
         let now = Date()
         let df = DateFormatter()
+        // Fixed formats must not follow the phone's calendar or 12/24-hour setting.
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.calendar = Calendar(identifier: .gregorian)
         switch name {
         case "date": df.dateFormat = "yyyy-MM-dd"; return df.string(from: now)
         case "time": df.dateFormat = "HH:mm"; return df.string(from: now)

@@ -52,7 +52,7 @@
       ],
       "icon": "assets/icon.ico",
       "artifactName": "Trexpanda-Setup.${ext}",
-      "publisherName": "Lumisha LLC"
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,

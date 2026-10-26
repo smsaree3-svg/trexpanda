@@ -56,7 +56,12 @@ class AuthManager(private val context: Context) {
 
         val tab = CustomTabsIntent.Builder().build()
         tab.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        tab.launchUrl(context, authorize)
+        try {
+            tab.launchUrl(context, authorize)
+        } catch (_: android.content.ActivityNotFoundException) {
+            // No browser that supports Custom Tabs: fall back to any browser.
+            context.startActivity(Intent(Intent.ACTION_VIEW, authorize).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
     }
 
     /** Exchange the `?code=` from the redirect for a session. Returns true on success. */
@@ -105,7 +110,12 @@ class AuthManager(private val context: Context) {
             .build()
         return try {
             http.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return false
+                if (!resp.isSuccessful) {
+                    // Revoked/expired refresh token: drop the dead session so the app
+                    // shows "Not signed in" instead of failing every sync.
+                    if (resp.code == 400 || resp.code == 401) signOut()
+                    return false
+                }
                 storeSession(JSONObject(resp.body?.string() ?: return false))
                 true
             }

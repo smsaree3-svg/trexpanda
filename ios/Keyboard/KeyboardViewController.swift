@@ -102,7 +102,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func refreshSuggestions() {
         suggestionBar.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        if !SharedStore.isAvailable {
+        if !hasFullAccess || !SharedStore.isAvailable {
             suggestionBar.addArrangedSubview(hint("Turn on Allow Full Access in Settings to use your snippets"))
             return
         }

@@ -1,14 +1,14 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, nativeImage, shell, dialog, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, nativeImage, shell, dialog, screen, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { exec } = require('child_process');
 
 const { Expander } = require('./expander');
-const { Store, mergeSnippetsForSync } = require('./store');
-const { charFor, K } = require('./keymap');
+const { Store, mergeSnippetsForSync, safeFileName, genSnippetId } = require('./store');
+const { charFor, K, CAPS_LOCK } = require('./keymap');
 const inject = require('./inject');
 const { fetchTeamLibrary, writeTeamLibrary } = require('./sync');
 const { CloudService } = require('./cloud');
@@ -139,13 +139,26 @@ async function reconcileFreeUsage() {
 // Global keyboard hook
 // ---------------------------------------------------------------------------
 
+let hookWired = false;
+
 function startHook() {
   if (!uIOhook || hookRunning) return;
-  uIOhook.on('keydown', onKeyDown);
-  uIOhook.on('keyup', onKeyUp);
-  uIOhook.on('mousedown', onMouseDown);
-  uIOhook.start();
-  hookRunning = true;
+  // Attach listeners ONCE: re-adding them on every Off/On toggle made each key
+  // count twice, so no trigger could ever match.
+  if (!hookWired) {
+    uIOhook.on('keydown', onKeyDown);
+    uIOhook.on('keyup', onKeyUp);
+    uIOhook.on('mousedown', onMouseDown);
+    hookWired = true;
+  }
+  try {
+    uIOhook.start();
+    hookRunning = true;
+  } catch (e) {
+    // e.g. macOS Accessibility not granted yet: report it, keep the app running.
+    uiohookError = e;
+    pushState();
+  }
 }
 
 // A click elsewhere means the typing context is gone — reset the buffer and
@@ -189,7 +202,7 @@ async function onKeyDown(e) {
   // Track modifier/lock state even while gated, so it's correct the moment
   // access resumes. Caps Lock toggles on each keydown of the Caps key.
   if (SHIFT_CODES.has(e.keycode)) { shiftDown = true; return; }
-  if (e.keycode === K.CAPS_LOCK) { capsOn = !capsOn; return; }
+  if (e.keycode === CAPS_LOCK) { capsOn = !capsOn; return; }
 
   // Expansion is gated on access: unlimited while trialing/paid, and after the
   // trial it drops to the metered free tier (a few expansions per day). Blocked
@@ -275,7 +288,8 @@ async function expandAttachment(action) {
       // Write to a stable temp path and copy the FILE to the clipboard.
       const dir = path.join(os.tmpdir(), 'trexpanda');
       try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
-      const filePath = path.join(dir, att.name || 'attachment');
+      // Never trust the stored name: it can come from a friend's shared library.
+      const filePath = path.join(dir, safeFileName(att.name));
       fs.writeFileSync(filePath, buffer);
       const copied = await copyFileToClipboard(filePath);
       if (copied) {
@@ -302,17 +316,22 @@ function delay(ms) {
 /** Put an actual file on the OS clipboard (so paste attaches the file). */
 function copyFileToClipboard(filePath) {
   return new Promise((resolve) => {
-    let cmd;
+    // No shell: arguments are passed directly, and the path travels as an
+    // argument / environment variable, never spliced into a command string.
+    const { execFile } = require('child_process');
     if (process.platform === 'darwin') {
-      const escaped = filePath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      cmd = `osascript -e 'set the clipboard to POSIX file "${escaped}"'`;
+      execFile('osascript', [
+        '-e', 'on run argv',
+        '-e', 'set the clipboard to POSIX file (item 1 of argv)',
+        '-e', 'end run',
+        filePath,
+      ], (err) => resolve(!err));
     } else if (process.platform === 'win32') {
-      const escaped = filePath.replace(/'/g, "''");
-      cmd = `powershell -NoProfile -Command "Set-Clipboard -Path '${escaped}'"`;
+      execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'Set-Clipboard -LiteralPath $env:TX_FILE'],
+        { env: { ...process.env, TX_FILE: filePath } }, (err) => resolve(!err));
     } else {
-      return resolve(false); // Linux file-clipboard varies; fall back to path text.
+      resolve(false); // Linux file-clipboard varies; fall back to path text.
     }
-    exec(cmd, (err) => resolve(!err));
   });
 }
 
@@ -354,7 +373,10 @@ async function syncCloud() {
   try {
     const st = await cloud.status();
     signedIn = st.signedIn;
-  } catch (_) {}
+  } catch (_) {
+    // Offline: keep friends' shared snippets cached and try again later.
+    return { ok: false, error: 'Cloud unreachable.' };
+  }
   if (!signedIn) {
     store.setCloudCache([]);
     rebuildEngine();
@@ -390,11 +412,12 @@ async function syncCloud() {
  */
 async function syncPersonal() {
   if (!cloud || !cloud.configured()) return { ok: false, error: 'Cloud not configured.' };
-  let signedIn = false;
-  try { signedIn = (await cloud.status()).signedIn; } catch (_) {}
-  if (!signedIn) return { ok: false, error: 'Not signed in.' };
+  let st = null;
+  try { st = await cloud.status(); } catch (_) {}
+  if (!st || !st.signedIn) return { ok: false, error: 'Not signed in.' };
   try {
     store.ensurePersonalIds(); // older snippets have no id and would never upload
+    store.adoptForAccount(st.user && st.user.id); // a different account signed in
     const remote = await cloud.pullSnippets();
     const merged = mergeSnippetsForSync({
       live: store.getPersonal(),
@@ -569,6 +592,13 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+  // The window only ever shows our own page: no navigating away (e.g. a dropped
+  // link or file) and no pop-ups, so window.api is never exposed to other pages.
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.on('closed', () => { win = null; });
@@ -811,10 +841,23 @@ if (!gotLock) {
     // check at start-up and then every 4 hours; a downloaded update installs the
     // next time the app restarts (with a system notification).
     try {
-      const { autoUpdater } = require('electron-updater');
-      const check = () => autoUpdater.checkForUpdatesAndNotify().catch(() => {});
-      check();
-      setInterval(check, 4 * 60 * 60 * 1000);
+      // macOS only installs updates to code-signed apps; unsigned Mac builds get
+      // new versions from the website instead.
+      if (process.platform !== 'darwin') {
+        const { autoUpdater } = require('electron-updater');
+        let notified = false;
+        autoUpdater.on('update-downloaded', (info) => {
+          if (notified) return; // once, not every 4 hours
+          notified = true;
+          try {
+            new Notification({ title: 'Trexpanda update ready',
+              body: `Version ${info.version} installs the next time Trexpanda restarts.` }).show();
+          } catch (_) {}
+        });
+        const check = () => autoUpdater.checkForUpdates().catch(() => {});
+        check();
+        setInterval(check, 4 * 60 * 60 * 1000);
+      }
     } catch (_) {}
   });
 

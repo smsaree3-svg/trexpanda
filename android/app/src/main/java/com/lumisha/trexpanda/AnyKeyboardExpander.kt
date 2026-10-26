@@ -20,6 +20,9 @@ object AnyKeyboardExpander {
         val kept = before.substring(0, before.length - action.backspaces)
         val after = fullText.substring(caret)
         val newText = kept + action.replacement + after
+        // Already correct (e.g. "github" -> "GitHub" typed as "GitHub"): don't
+        // rewrite the field, which would reset the keyboard and could loop.
+        if (newText == fullText) return null
         val back = charsForLastGraphemes(action.replacement, action.caretBack)
         return Edit(newText, kept.length + action.replacement.length - back, action.trigger)
     }

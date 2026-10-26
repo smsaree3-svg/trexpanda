@@ -253,4 +253,18 @@ do $$ begin
 end $$;
 rollback;
 
+-- Nobody outside the database can ask whether ANOTHER user pays or is an admin.
+do $$
+declare r text; fn text;
+begin
+  foreach r in array array['anon','authenticated'] loop
+    foreach fn in array array['public.is_paid(uuid)','public.is_admin(uuid)'] loop
+      if has_function_privilege(r, fn, 'execute') then
+        raise exception 'BILLING FAIL: % can execute %', r, fn;
+      end if;
+    end loop;
+  end loop;
+  raise notice 'BILLING ok: is_paid(uuid)/is_admin(uuid) not callable by anon or authenticated';
+end $$;
+
 select 'ALL RLS TESTS PASSED' as result;

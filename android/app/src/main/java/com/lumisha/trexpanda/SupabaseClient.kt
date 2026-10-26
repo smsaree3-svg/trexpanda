@@ -24,20 +24,30 @@ class SupabaseClient(private val auth: AuthManager) {
     fun pullSnippets(): List<Snippet> {
         val token = auth.freshAccessToken() ?: throw IOException("Not signed in.")
         val uid = auth.userId ?: throw IOException("Not signed in.")
-        val url = SupabaseConfig.restUrl(
-            "snippets?user_id=eq.$uid&select=id,trigger,replacement,label,html,attachment,enabled,updated_at,deleted_at"
-        )
-        val req = Request.Builder()
-            .url(url)
-            .addHeader("apikey", SupabaseConfig.anonKey)
-            .addHeader("Authorization", "Bearer $token")
-            .addHeader("Accept", "application/json")
-            .get()
-            .build()
-        http.newCall(req).execute().use { resp ->
-            val body = resp.body?.string() ?: "[]"
-            if (!resp.isSuccessful) throw IOException("Pull failed (${resp.code}): $body")
-            return SnippetJson.rowsFromArray(JSONArray(body))
+        // The server returns at most PAGE rows per request: page until a short page,
+        // or rows past the first page would look "missing" and get overwritten.
+        val all = ArrayList<Snippet>()
+        var offset = 0
+        while (true) {
+            val url = SupabaseConfig.restUrl(
+                "snippets?user_id=eq.$uid&select=id,trigger,replacement,label,html,attachment,enabled,updated_at,deleted_at" +
+                    "&order=id&limit=$PAGE&offset=$offset"
+            )
+            val req = Request.Builder()
+                .url(url)
+                .addHeader("apikey", SupabaseConfig.anonKey)
+                .addHeader("Authorization", "Bearer $token")
+                .addHeader("Accept", "application/json")
+                .get()
+                .build()
+            val page = http.newCall(req).execute().use { resp ->
+                val body = resp.body?.string() ?: "[]"
+                if (!resp.isSuccessful) throw IOException("Pull failed (${resp.code}): $body")
+                SnippetJson.rowsFromArray(JSONArray(body))
+            }
+            all.addAll(page)
+            if (page.size < PAGE) return all
+            offset += PAGE
         }
     }
 
@@ -94,5 +104,9 @@ class SupabaseClient(private val auth: AuthManager) {
 
     companion object {
         private val JSON = "application/json".toMediaType()
+    }
+
+    companion object {
+        private const val PAGE = 1000
     }
 }

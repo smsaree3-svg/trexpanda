@@ -108,8 +108,11 @@ final class AuthService: NSObject, ObservableObject {
                                       body: ["refresh_token": refreshToken])
             try store(json)
             return accessToken
-        } catch {
+        } catch AuthError.rejected {
+            signOut() // revoked or expired session: show "signed out", not a broken sync
             return nil
+        } catch {
+            return nil // offline etc.: keep the session and try again later
         }
     }
 
@@ -141,7 +144,9 @@ final class AuthService: NSObject, ObservableObject {
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, resp) = try await URLSession.shared.data(for: req)
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        guard (resp as? HTTPURLResponse)?.statusCode ?? 0 < 300 else {
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 400 || code == 401 { throw AuthError.rejected((json["error_description"] as? String) ?? "Session expired.") }
+        guard code < 300 else {
             throw AuthError.failed((json["error_description"] as? String) ?? (json["msg"] as? String) ?? "Sign-in failed.")
         }
         return json
@@ -168,10 +173,11 @@ final class AuthService: NSObject, ObservableObject {
 enum AuthError: LocalizedError {
     case cancelled
     case failed(String)
+    case rejected(String)
     var errorDescription: String? {
         switch self {
         case .cancelled: return "Sign-in was cancelled."
-        case .failed(let m): return m
+        case .failed(let m), .rejected(let m): return m
         }
     }
 }

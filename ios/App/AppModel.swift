@@ -21,8 +21,9 @@ final class AppModel: ObservableObject {
     }
 
     init() {
-        snippets = SharedStore.loadSnippets()
-        tombstones = SharedStore.loadTombstones()
+        // Ids are compared as strings with the server's lower-case uuids.
+        snippets = SharedStore.loadSnippets().map { var s = $0; s.id = s.id.lowercased(); return s }
+        tombstones = SharedStore.loadTombstones().map { Tombstone(id: $0.id.lowercased(), deletedAt: $0.deletedAt) }
         if snippets.isEmpty && tombstones.isEmpty && !auth.isSignedIn {
             snippets = Self.starterSnippets
             persist()
@@ -80,15 +81,43 @@ final class AppModel: ObservableObject {
         isSyncing = true
         defer { isSyncing = false }
         do {
+            adoptLocalSnippetsIfAccountChanged()
             let remote = try await api.pullSnippets()
             let merged = SyncMerge.merge(live: snippets, tombstones: tombstones, remote: remote)
             snippets = merged.live
             tombstones = merged.tombstones
             persist()
             try await api.pushSnippets(merged.push)
+            Self.lastSyncedUser = auth.userId
             status = "Synced \(merged.live.count) snippet\(merged.live.count == 1 ? "" : "s")"
         } catch {
             status = "Sync failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Snippet ids are unique across ALL accounts on the server, so another
+    /// account's ids can't be uploaded here. When a different account signs in,
+    /// give the snippets on this iPhone fresh ids (they become this account's).
+    private func adoptLocalSnippetsIfAccountChanged() {
+        guard let uid = auth.userId, let last = Self.lastSyncedUser, last != uid else { return }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        snippets = snippets.map { var s = $0; s.id = UUID().uuidString.lowercased(); s.updatedAt = now; return s }
+        tombstones = []
+        persist()
+    }
+
+    /// The account the local snippets were last synced with (a small file, so no
+    /// UserDefaults privacy-manifest entry is needed).
+    private static var lastSyncedUserURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("last-synced-user")
+    }
+    private static var lastSyncedUser: String? {
+        get { lastSyncedUserURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) } }
+        set {
+            guard let url = lastSyncedUserURL else { return }
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let v = newValue { try? v.write(to: url, atomically: true, encoding: .utf8) }
         }
     }
 

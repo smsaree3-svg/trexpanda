@@ -17,7 +17,7 @@ struct Snippet: Codable, Identifiable, Equatable {
     var isDeleted: Bool { deletedAt != nil }
 
     init(
-        id: String = UUID().uuidString,
+        id: String = UUID().uuidString.lowercased(), // Postgres returns uuids lower-case
         trigger: String,
         replacement: String,
         label: String? = nil,
