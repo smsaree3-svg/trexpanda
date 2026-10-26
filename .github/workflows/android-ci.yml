@@ -27,10 +27,21 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '8.13'
-      - name: Unit tests
-        run: gradle --no-daemon testDebugUnitTest
-      - name: Compile debug build (lint-free compile check)
-        run: gradle --no-daemon assembleDebug
+      - name: Unit tests and debug build
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon --console=plain testDebugUnitTest assembleDebug 2>&1 | tee "$RUNNER_TEMP/gradle.log"
+      - name: Report build errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/gradle.log"
+          # Kotlin/Java compile errors, failed tests, and Gradle's summary.
+          grep -E '^e: |error:|FAILED|AAPT|Could not|> ' "$log" | head -40 | while IFS= read -r line; do
+            echo "::error::${line//%/%25}"
+          done
+          awk '/What went wrong/{f=1} f{print} /Try:/{exit}' "$log" | head -30 | sed 's/^/::error::/' 
       - name: Attach debug APK
         uses: actions/upload-artifact@v6
         with:
