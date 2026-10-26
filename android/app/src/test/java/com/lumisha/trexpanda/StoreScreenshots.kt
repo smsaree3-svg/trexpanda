@@ -164,4 +164,41 @@ class StoreScreenshots {
         root.addView(kb, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         save(render(root, w, h), "4-keyboard.png")
     }
+
+    /** Frames for the Play "prominent disclosure" video (Accessibility declaration). */
+    @Test
+    fun accessibilityDisclosure() {
+        assumeTrue(outDir != null)
+        SnippetStore(ctx()).setPersonal(samples)
+        val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        val (w, h) = screen()
+        val button = activity.findViewById<View>(R.id.anyKeyboardButton)
+        val scroll = activity.findViewById<View>(R.id.scroll)
+        render(activity.window.decorView, w, h)
+        val loc = IntArray(2); button.getLocationInWindow(loc)
+        scroll.scrollTo(0, (loc[1] - h / 2).coerceAtLeast(0))
+        val before = render(activity.window.decorView, w, h)
+        save(before, "a11y-1-button.png")
+        button.getLocationInWindow(loc)
+        File(outDir, "a11y-1-button.txt").writeText("${loc[0] + button.width / 2},${loc[1] + button.height / 2}")
+        button.performClick()
+        ShadowLooper.idleMainLooper()
+        val dialog: Dialog = ShadowDialog.getLatestDialog() ?: return
+        val bg = render(activity.window.decorView, w, h)
+        val canvas = Canvas(bg)
+        canvas.drawColor(Color.argb(150, 0, 0, 0))
+        val dv = dialog.window!!.decorView
+        val dw = (w * 0.92).toInt()
+        dv.measure(View.MeasureSpec.makeMeasureSpec(dw, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.AT_MOST))
+        dv.layout(0, 0, dw, dv.measuredHeight)
+        val top = (h - dv.measuredHeight) / 2
+        canvas.save()
+        canvas.translate(((w - dw) / 2).toFloat(), top.toFloat())
+        dv.draw(canvas)
+        canvas.restore()
+        save(bg, "a11y-2-disclosure.png")
+        val positive = (dialog as androidx.appcompat.app.AlertDialog).getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+        val pl = IntArray(2); positive.getLocationInWindow(pl)
+        File(outDir, "a11y-2-disclosure.txt").writeText("${(w - dw) / 2 + pl[0] + positive.width / 2},${top + pl[1] + positive.height / 2}")
+    }
 }

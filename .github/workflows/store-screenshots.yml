@@ -39,5 +39,5 @@ jobs:
         run: |
           ls -l "$RUNNER_TEMP/shots"
           gh release delete store-screenshots --yes 2>/dev/null || true
-          gh release create store-screenshots "$RUNNER_TEMP"/shots/*.png --draft --target "$GITHUB_SHA" \
+          gh release create store-screenshots "$RUNNER_TEMP"/shots/* --draft --target "$GITHUB_SHA" \
             --title "Store screenshots" --notes "Rendered app screens for the Play listing. Private draft."
