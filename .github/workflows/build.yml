@@ -115,6 +115,9 @@ jobs:
           tag_name: ${{ github.ref_name }}
           draft: false
           prerelease: false
+          # A release created as a pre-release (so the website keeps the old
+          # installers while these build) must become "latest" once they're attached.
+          make_latest: true
           fail_on_unmatched_files: false
           files: |
             release/Trexpanda-Setup.exe
