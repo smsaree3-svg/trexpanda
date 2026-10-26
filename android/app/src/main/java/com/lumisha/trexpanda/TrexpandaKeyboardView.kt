@@ -54,6 +54,14 @@ class TrexpandaKeyboardView(
         setBackgroundColor(color(R.color.kbBg))
         val pad = dp(5)
         setPadding(pad, dp(6), pad, dp(8))
+        // On Android 15+ (target API 35+) the keyboard window can extend under the
+        // gesture/navigation bar; keep the bottom key row above it.
+        val baseBottom = paddingBottom
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
+            val nav = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars())
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, baseBottom + nav.bottom)
+            insets
+        }
         buildSuggestionStrip()
         keyArea = LinearLayout(context).apply { orientation = VERTICAL }
         addView(keyArea)

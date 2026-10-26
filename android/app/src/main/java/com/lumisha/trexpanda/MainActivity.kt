@@ -15,6 +15,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
@@ -38,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var enableKeyboardButton: Button
     private lateinit var switchKeyboardButton: Button
     private lateinit var cloudSettingsButton: Button
+    private lateinit var deleteAccountButton: Button
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: SnippetAdapter
     private lateinit var emptyState: View
@@ -66,6 +71,7 @@ class MainActivity : AppCompatActivity() {
         enableKeyboardButton = findViewById(R.id.enableKeyboardButton)
         switchKeyboardButton = findViewById(R.id.switchKeyboardButton)
         cloudSettingsButton = findViewById(R.id.cloudSettingsButton)
+        deleteAccountButton = findViewById(R.id.deleteAccountButton)
         liveChip = findViewById(R.id.liveChip)
         recycler = findViewById(R.id.recycler)
         emptyState = findViewById(R.id.emptyState)
@@ -77,6 +83,8 @@ class MainActivity : AppCompatActivity() {
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
 
+        applySystemBarInsets()
+
         signInButton.setOnClickListener {
             if (!SupabaseConfig.isConfigured()) {
                 toast("Add your Supabase anon key first.")
@@ -86,6 +94,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         cloudSettingsButton.setOnClickListener { showCloudSettingsDialog() }
+        deleteAccountButton.setOnClickListener { confirmDeleteAccount() }
         signOutButton.setOnClickListener { realtime.stop(); auth.signOut(); refresh() }
         syncButton.setOnClickListener { runSync() }
         addButton.setOnClickListener { showEditDialog(null) }
@@ -150,6 +159,11 @@ class MainActivity : AppCompatActivity() {
         signOutButton.visibility = if (signedIn) View.VISIBLE else View.GONE
         syncButton.isEnabled = signedIn
         liveChip.visibility = if (signedIn) View.VISIBLE else View.GONE
+        deleteAccountButton.visibility = if (signedIn) View.VISIBLE else View.GONE
+        // Store builds ship with the cloud settings baked in, so the developer
+        // "paste your Supabase key" screen is only offered on builds without them.
+        cloudSettingsButton.visibility =
+            if (BuildConfig.SUPABASE_ANON_KEY.isBlank()) View.VISIBLE else View.GONE
         statusText.text = when {
             !SupabaseConfig.isConfigured() -> "Cloud not configured"
             signedIn -> "Signed in as ${auth.userEmail ?: "you"}"
@@ -158,6 +172,81 @@ class MainActivity : AppCompatActivity() {
         val items = store.getPersonal().sortedBy { it.trigger ?: "" }
         adapter.submit(items)
         emptyState.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    /**
+     * Android 15+ draws apps edge to edge (mandatory when targeting API 36), so keep
+     * content and the "New snippet" button clear of the status and navigation bars.
+     */
+    private fun applySystemBarInsets() {
+        val scroll = findViewById<View>(R.id.scroll)
+        // Padding as declared in the layout; insets are added on top of it.
+        val baseLeft = scroll.paddingLeft
+        val baseTop = scroll.paddingTop
+        val baseRight = scroll.paddingRight
+        val baseBottom = scroll.paddingBottom
+        val fabMargin = (20 * resources.displayMetrics.density).toInt()
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { _, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            scroll.updatePadding(
+                left = baseLeft + bars.left,
+                top = baseTop + bars.top,
+                right = baseRight + bars.right,
+                bottom = baseBottom + bars.bottom,
+            )
+            addButton.updateLayoutParams<android.view.ViewGroup.MarginLayoutParams> {
+                bottomMargin = fabMargin + bars.bottom
+                marginEnd = fabMargin + bars.right
+            }
+            insets
+        }
+    }
+
+    // ---- account deletion ----------------------------------------------------
+
+    private fun confirmDeleteAccount() {
+        AlertDialog.Builder(this)
+            .setTitle("Delete your account?")
+            .setMessage(
+                "This permanently deletes your Trexpanda account and everything stored in " +
+                "the cloud: your synced snippets, shared libraries, friends and profile. " +
+                "It can't be undone.\n\nSnippets already on this phone stay on this phone."
+            )
+            .setPositiveButton("Delete account") { _, _ -> deleteAccount() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun deleteAccount() {
+        deleteAccountButton.isEnabled = false
+        Thread {
+            val result = try {
+                Result.success(SupabaseClient(auth).deleteAccount())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+            runOnUiThread {
+                deleteAccountButton.isEnabled = true
+                result.onSuccess { refusal ->
+                    if (refusal == null) {
+                        realtime.stop()
+                        auth.signOut()
+                        refresh()
+                        toast("Your account has been deleted.")
+                    } else {
+                        AlertDialog.Builder(this)
+                            .setTitle("Can't delete yet")
+                            .setMessage(refusal)
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+                }.onFailure {
+                    toast("Couldn't delete your account. Check your connection and try again.")
+                }
+            }
+        }.start()
     }
 
     // ---- cloud settings ------------------------------------------------------

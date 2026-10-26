@@ -38,6 +38,7 @@ function fakeClient({ rpc = {}, profiles = [] } = {}) {
     auth: {
       getUser: async () => ({ data: { user: { id: ME } } }),
       resetPasswordForEmail: async (email, opts) => { calls.reset.push({ email, opts }); return { error: null }; },
+      signOut: async (opts) => { calls.signOut = (calls.signOut || []).concat([opts]); return { error: null }; },
     },
   };
   return client;
@@ -107,6 +108,22 @@ test('requestPasswordReset rejects a missing or malformed address without callin
   await assert.rejects(() => service(c).requestPasswordReset({ email: '' }), /Enter the email/);
   await assert.rejects(() => service(c).requestPasswordReset({ email: 'not-an-email' }), /Enter the email/);
   assert.strictEqual(c.calls.reset.length, 0);
+});
+
+test('deleteAccount calls the RPC and signs out locally on success', async () => {
+  const c = fakeClient({ rpc: { delete_my_account: { data: { ok: true }, error: null } } });
+  const out = await service(c).deleteAccount();
+  assert.deepStrictEqual(out, { ok: true });
+  assert.strictEqual(c.calls.rpc[0].name, 'delete_my_account');
+  assert.deepStrictEqual(c.calls.signOut, [{ scope: 'local' }]);
+});
+
+test('deleteAccount passes the server refusal through and stays signed in', async () => {
+  const msg = 'Cancel your Trexpanda subscription first';
+  const c = fakeClient({ rpc: { delete_my_account: { data: { ok: false, error: 'active_subscription', message: msg }, error: null } } });
+  const out = await service(c).deleteAccount();
+  assert.deepStrictEqual(out, { ok: false, message: msg });
+  assert.strictEqual(c.calls.signOut, undefined);
 });
 
 Promise.all(pending).then(() => console.log(`\ncloud-service: ${passed} passed`));

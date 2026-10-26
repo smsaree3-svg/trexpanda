@@ -22,6 +22,8 @@ run "$here/10_fixtures.sql"      # users exist BEFORE billing.sql, so an email-m
 run "$root/billing.sql"
 run "$root/migrations/20261017_security_hardening.sql"
 run "$root/migrations/20261017_security_hardening.sql"   # idempotent
+run "$root/migrations/20261026_account_deletion.sql"
+run "$root/migrations/20261026_account_deletion.sql"     # idempotent
 run "$root/schema.sql"           # re-running the base files must not undo the hardening
 run "$root/billing.sql"
 psql -X -q -v ON_ERROR_STOP=1 -d "$db" -f "$here/rls_test.sql" 2>&1 | grep -E "ok:|FAIL|PASSED|ERROR"

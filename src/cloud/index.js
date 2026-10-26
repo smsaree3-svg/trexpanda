@@ -341,6 +341,23 @@ class CloudService {
     return { ok: true };
   }
 
+  /**
+   * Permanently delete the signed-in account and all its cloud data
+   * (delete_my_account RPC). Returns { ok: true } and signs out locally, or
+   * { ok: false, message } when the server refuses (e.g. an active subscription).
+   */
+  async deleteAccount() {
+    const client = this._requireClient();
+    const { data, error } = await client.rpc('delete_my_account');
+    if (error) throw new Error(error.message || 'Could not delete your account.');
+    if (data && data.ok) {
+      // The session's user no longer exists; clear it locally.
+      await client.auth.signOut({ scope: 'local' }).catch(() => {});
+      return { ok: true };
+    }
+    return { ok: false, message: (data && data.message) || 'Your account could not be deleted yet.' };
+  }
+
   async signOut() {
     if (!this.configured()) return { ok: true };
     await this.client.auth.signOut();

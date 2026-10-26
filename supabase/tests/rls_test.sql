@@ -185,4 +185,72 @@ do $$ begin
 end $$;
 rollback;
 
+-- Account deletion -----------------------------------------------------------
+-- A paying user is refused until the subscription is cancelled.
+insert into auth.users(id, email, email_confirmed_at)
+  values ('00000000-0000-0000-0000-0000000000d1','payer@example.test', now()),
+         ('00000000-0000-0000-0000-0000000000d2','leaver@example.test', now());
+insert into public.profiles(id, username) values
+  ('00000000-0000-0000-0000-0000000000d1','payer'),
+  ('00000000-0000-0000-0000-0000000000d2','leaver');
+insert into public.subscriptions(user_id, status) values ('00000000-0000-0000-0000-0000000000d1','active');
+insert into public.snippets(user_id, trigger, replacement)
+  values ('00000000-0000-0000-0000-0000000000d2', ';bye', 'gone');
+insert into public.friendships(requester_id, addressee_id, status)
+  values ('00000000-0000-0000-0000-0000000000d2','00000000-0000-0000-0000-00000000000a','accepted');
+
+begin;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d1',true);
+set local role authenticated;
+do $$ begin
+  if (public.delete_my_account() ->> 'error') is distinct from 'active_subscription' then
+    raise exception 'DELETE FAIL: account with an active subscription was deleted';
+  end if;
+end $$;
+commit;
+do $$ begin
+  if not exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000d1') then
+    raise exception 'DELETE FAIL: paying user row is gone';
+  end if;
+  raise notice 'DELETE ok: refused while a subscription is active';
+end $$;
+
+-- A normal user deletes only themselves; their data cascades away.
+begin;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d2',true);
+set local role authenticated;
+do $$ begin
+  if (public.delete_my_account() ->> 'ok') is distinct from 'true' then
+    raise exception 'DELETE FAIL: normal deletion did not succeed';
+  end if;
+end $$;
+commit;
+do $$ begin
+  if exists (select 1 from auth.users where id = '00000000-0000-0000-0000-0000000000d2') then
+    raise exception 'DELETE FAIL: user row still exists';
+  end if;
+  if exists (select 1 from public.snippets where user_id = '00000000-0000-0000-0000-0000000000d2')
+     or exists (select 1 from public.profiles where id = '00000000-0000-0000-0000-0000000000d2')
+     or exists (select 1 from public.friendships where requester_id = '00000000-0000-0000-0000-0000000000d2') then
+    raise exception 'DELETE FAIL: data was left behind';
+  end if;
+  if (select count(*) from auth.users where id in ('00000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-0000000000d1')) <> 2 then
+    raise exception 'DELETE FAIL: another user was affected';
+  end if;
+  raise notice 'DELETE ok: only the caller removed; snippets, profile, friendships cascaded';
+end $$;
+
+-- Anonymous callers cannot call it.
+begin;
+set local role anon;
+do $$ begin
+  begin
+    perform public.delete_my_account();
+    raise exception 'DELETE FAIL: anon could call delete_my_account';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'DELETE ok: anon refused';
+end $$;
+rollback;
+
 select 'ALL RLS TESTS PASSED' as result;

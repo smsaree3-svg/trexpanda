@@ -1016,6 +1016,22 @@ async function doGoogle() {
   window.api.syncNow();
 }
 
+async function doDeleteAccount() {
+  const ok = window.confirm(
+    'Delete your Trexpanda account?\n\n' +
+    'This permanently deletes your account and everything stored in the cloud: ' +
+    'synced snippets, shared libraries, friends and profile. It cannot be undone.\n\n' +
+    'Snippets on this computer stay on this computer.');
+  if (!ok) return;
+  const btn = $('btn-delete-account'); btn.disabled = true;
+  const res = await cc('deleteAccount');
+  btn.disabled = false;
+  if (!res.ok) { window.alert(res.error || 'Could not delete your account. Please try again.'); return; }
+  if (res.data && res.data.ok === false) { window.alert(res.data.message || 'Your account could not be deleted yet.'); return; }
+  await refreshCloud();
+  window.alert('Your account has been deleted.');
+}
+
 async function doSignOut() {
   await cc('signOut');
   await refreshCloud();
@@ -1089,6 +1105,7 @@ $('btn-signin').addEventListener('click', doSignIn);
 $('btn-forgot').addEventListener('click', doForgotPassword);
 $('btn-signup').addEventListener('click', doSignUp);
 $('btn-signout').addEventListener('click', doSignOut);
+$('btn-delete-account').addEventListener('click', doDeleteAccount);
 $('btn-add-friend').addEventListener('click', addFriend);
 $('add-friend-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') addFriend(); });
 $('btn-publish-cloud').addEventListener('click', publishCloud);

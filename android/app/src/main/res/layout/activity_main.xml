@@ -16,6 +16,7 @@
         android:background="@drawable/top_glow" />
 
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/scroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
@@ -208,6 +209,18 @@
                     android:textSize="12.5sp"
                     android:textColor="@color/accent"
                     android:text="Add your Supabase cloud key" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/deleteAccountButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:visibility="gone"
+                    android:textAllCaps="false"
+                    android:textSize="12.5sp"
+                    android:textColor="@color/danger"
+                    android:text="Delete account" />
             </LinearLayout>
 
             <!-- Keyboard card -->
