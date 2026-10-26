@@ -42,6 +42,12 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           printf '%s' "${{ secrets.APPSTORE_PRIVATE_KEY }}" > ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
           echo "KEY_PATH=$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8" >> "$GITHUB_ENV"
+      - name: Create signing certificate and App Store profiles
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q pyjwt cryptography requests
+          "$RUNNER_TEMP/venv/bin/python" ci/asc_signing.py setup >> "$GITHUB_ENV"
       - name: Generate the Xcode project
         run: brew install xcodegen && xcodegen generate
       - name: Archive
@@ -51,9 +57,9 @@ jobs:
           xcodebuild archive -project Trexpanda.xcodeproj -scheme Trexpanda \
             -configuration Release -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/Trexpanda.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" \
-            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $TREX_KEYCHAIN" \
+            TREX_PROFILE_APP="$TREX_PROFILE_APP" TREX_PROFILE_KEYBOARD="$TREX_PROFILE_KEYBOARD" \
             CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             SUPABASE_URL='${{ vars.SUPABASE_URL }}' SUPABASE_ANON_KEY='${{ vars.SUPABASE_ANON_KEY }}' \
             2>&1 | tee "$RUNNER_TEMP/xcode.log"
@@ -67,7 +73,12 @@ jobs:
             <key>method</key><string>app-store-connect</string>
             <key>destination</key><string>upload</string>
             <key>teamID</key><string>${TEAM_ID}</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key><dict>
+              <key>com.lumisha.trexpanda</key><string>${TREX_PROFILE_APP}</string>
+              <key>com.lumisha.trexpanda.keyboard</key><string>${TREX_PROFILE_KEYBOARD}</string>
+            </dict>
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict></plist>
           PLIST
@@ -84,6 +95,10 @@ jobs:
           grep -E 'error:|\*\* .* FAILED|failed \(' "$RUNNER_TEMP/xcode.log" | sort -u | head -60 > "$RUNNER_TEMP/errors.txt" || true
           msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
           echo "::error title=Xcode failure::${msg}"
+      - name: Revoke the CI certificate and profiles
+        if: always()
+        shell: bash
+        run: '[ -x "$RUNNER_TEMP/venv/bin/python" ] && "$RUNNER_TEMP/venv/bin/python" ci/asc_signing.py cleanup || true'
       - name: Remove the API key
         if: always()
         run: rm -rf ~/.appstoreconnect
