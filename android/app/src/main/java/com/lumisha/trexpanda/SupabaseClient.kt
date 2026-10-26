@@ -104,9 +104,6 @@ class SupabaseClient(private val auth: AuthManager) {
 
     companion object {
         private val JSON = "application/json".toMediaType()
-    }
-
-    companion object {
         private const val PAGE = 1000
     }
 }
