@@ -41,8 +41,8 @@ jobs:
           log="$RUNNER_TEMP/gradle.log"
           # GitHub keeps only 10 annotations per step, so send the useful lines as one.
           { awk '/What went wrong/{f=1} f{print} /\* Try:/{exit}' "$log"
-            grep -E '^e: |error:|ERROR:|AAPT|FAILED|Unresolved|Could not' "$log" | grep -v '^> Task' ; } \
-            | head -60 > "$RUNNER_TEMP/errors.txt"
+            grep -E '^e: |error:|ERROR:|AAPT|FAILED|Unresolved|Could not|Exception|Error|Caused by|at com\.lumisha|at android|at androidx|at com\.google' "$log" | grep -v '^> Task' ; } \
+            | head -90 > "$RUNNER_TEMP/errors.txt"
           msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
           echo "::error title=Gradle failure::${msg}"
           cat "$RUNNER_TEMP/errors.txt" >> "$GITHUB_STEP_SUMMARY"
