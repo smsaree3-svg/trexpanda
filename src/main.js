@@ -807,10 +807,14 @@ if (!gotLock) {
     scheduleSync();
     resolveEntitlement().catch(() => {}); // resolve Free/Pro in the background
 
-    // Auto-update (no-op until you configure a publish target + code signing).
+    // Auto-update from GitHub Releases. Trexpanda lives in the tray for days, so
+    // check at start-up and then every 4 hours; a downloaded update installs the
+    // next time the app restarts (with a system notification).
     try {
       const { autoUpdater } = require('electron-updater');
-      autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+      const check = () => autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+      check();
+      setInterval(check, 4 * 60 * 60 * 1000);
     } catch (_) {}
   });
 
