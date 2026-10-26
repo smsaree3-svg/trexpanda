@@ -440,11 +440,11 @@
       <p>Install it on your computer and your phone, sign in once, and your snippets stay in sync in real time.</p>
       <div class="dl-row">
         <a href="/trexpanda-latest.apk" download class="btn os" id="dlAndroid">Download for Android (APK)</a>
-        <a href="#" class="btn os" id="dlWin">Windows</a>
-        <a href="#" class="btn os" id="dlMac">macOS</a>
+        <a href="https://github.com/smsaree3-svg/trexpanda/releases/latest/download/Trexpanda-Setup.exe" class="btn os" id="dlWin">Download for Windows</a>
+        <a href="https://github.com/smsaree3-svg/trexpanda/releases/latest/download/Trexpanda.dmg" class="btn os" id="dlMac">Download for macOS</a>
         <button class="btn os share" id="shareBtn">Share with a friend</button>
       </div>
-      <div class="dl-note" id="dlNote">Android app available now (v0.2.0, signed). Windows and macOS coming soon.</div>
+      <div class="dl-note" id="dlNote">Windows and macOS installers always download the latest version. On Windows, if SmartScreen says "Windows protected your PC", choose <b>More info → Run anyway</b>.</div>
     </div>
   </div>
 </section>
@@ -559,16 +559,8 @@
   });
 
   // ---- Downloads -------------------------------------------------------
-  (function wireDownloads(){
-    var win = document.getElementById('dlWin'), mac = document.getElementById('dlMac'), note = document.getElementById('dlNote');
-    [win, mac].forEach(function(el){
-      el.addEventListener('click', function(e){
-        e.preventDefault();
-        note.innerHTML = 'Desktop apps are on the way. The <b>Android app is ready to download now</b>. ' +
-          'Tap the APK above, open it on your phone, and allow install from your browser if prompted.';
-      });
-    });
-  })();
+  // The Windows/macOS buttons link straight to the newest GitHub release asset
+  // (releases/latest/download/...), so a new release needs no website change.
 
   // ---- Reveal on scroll ------------------------------------------------
   (function(){
