@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   testflight:
-    runs-on: macos-15
+    runs-on: macos-26
     defaults:
       run:
         working-directory: ios
@@ -28,6 +28,13 @@ jobs:
       TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID || 'KXT9A4CRLY' }}
     steps:
       - uses: actions/checkout@v5
+      - name: Use the newest Xcode 26 (App Store Connect requires the iOS 26 SDK)
+        shell: bash
+        run: |
+          x=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          [ -n "$x" ] || x=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$x/Contents/Developer"
+          xcodebuild -version
       - name: Check configuration
         shell: bash
         run: |
