@@ -28,6 +28,9 @@ jobs:
       - name: Render screens
         env:
           TREX_STORE_SHOTS: ${{ runner.temp }}/shots
+          # Public values (anon key, gated by RLS) so screens show the store build.
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: gradle --no-daemon --console=plain testDebugUnitTest --tests '*StoreScreenshots*'
       - name: Publish to a private draft release
         working-directory: ${{ github.workspace }}
