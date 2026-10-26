@@ -38,7 +38,7 @@ on:
         default: draft
 
 permissions:
-  contents: read
+  contents: write   # creates the private draft release holding the .aab
 
 jobs:
   bundle:
@@ -108,6 +108,20 @@ jobs:
           name: trexpanda-android-${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}
           path: android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
+
+      - name: Keep the bundle in a private draft release
+        # Draft releases are visible only to repo collaborators. Makes the .aab
+        # easy to fetch for manual Play Console uploads (artifacts expire).
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="android-build-${{ steps.ver.outputs.code }}"
+          cp android/app/build/outputs/bundle/release/app-release.aab "trexpanda-${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}.aab"
+          gh release create "$tag" "trexpanda-${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}.aab" \
+            --draft --target "$GITHUB_SHA" --title "Android ${{ steps.ver.outputs.name }} (${{ steps.ver.outputs.code }})" \
+            --notes "Signed Android App Bundle for Google Play. Private draft — do not publish."
 
       - name: Check for Play credentials
         id: play
