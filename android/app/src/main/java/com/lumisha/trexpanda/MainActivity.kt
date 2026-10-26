@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var switchKeyboardButton: Button
     private lateinit var cloudSettingsButton: Button
     private lateinit var deleteAccountButton: Button
+    private lateinit var anyKeyboardButton: Button
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: SnippetAdapter
     private lateinit var emptyState: View
@@ -72,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         switchKeyboardButton = findViewById(R.id.switchKeyboardButton)
         cloudSettingsButton = findViewById(R.id.cloudSettingsButton)
         deleteAccountButton = findViewById(R.id.deleteAccountButton)
+        anyKeyboardButton = findViewById(R.id.anyKeyboardButton)
         liveChip = findViewById(R.id.liveChip)
         recycler = findViewById(R.id.recycler)
         emptyState = findViewById(R.id.emptyState)
@@ -95,6 +97,7 @@ class MainActivity : AppCompatActivity() {
         }
         cloudSettingsButton.setOnClickListener { showCloudSettingsDialog() }
         deleteAccountButton.setOnClickListener { confirmDeleteAccount() }
+        anyKeyboardButton.setOnClickListener { explainAnyKeyboardMode() }
         signOutButton.setOnClickListener { realtime.stop(); auth.signOut(); refresh() }
         syncButton.setOnClickListener { runSync() }
         addButton.setOnClickListener { showEditDialog(null) }
@@ -169,6 +172,8 @@ class MainActivity : AppCompatActivity() {
             signedIn -> "Signed in as ${auth.userEmail ?: "you"}"
             else -> "Not signed in"
         }
+        anyKeyboardButton.text = if (isAnyKeyboardModeOn())
+            "Works with any keyboard: On (tap to manage)" else "Use with Gboard or any keyboard"
         val items = store.getPersonal().sortedBy { it.trigger ?: "" }
         adapter.submit(items)
         emptyState.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
@@ -202,6 +207,38 @@ class MainActivity : AppCompatActivity() {
             }
             insets
         }
+    }
+
+    // ---- any-keyboard mode (accessibility service) -----------------------------
+
+    /** Prominent disclosure (required by Google Play) before the user turns it on. */
+    private fun explainAnyKeyboardMode() {
+        AlertDialog.Builder(this)
+            .setTitle("Use Trexpanda with any keyboard")
+            .setMessage(
+                "To expand your triggers while you type with Gboard or another keyboard, " +
+                "Trexpanda uses Android's Accessibility service.\n\n" +
+                "What it does: when you type in a text field, it checks whether the text " +
+                "before the cursor ends with one of your triggers and, if so, replaces it " +
+                "with your snippet.\n\n" +
+                "What it never does: read password fields, store, log or send anything you " +
+                "type, or act on anything other than the field you are typing in.\n\n" +
+                "On the next screen, tap \"Trexpanda (any keyboard)\" and turn it on. " +
+                "You can turn it off there at any time."
+            )
+            .setPositiveButton("Open settings") { _, _ ->
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    private fun isAnyKeyboardModeOn(): Boolean {
+        val enabled = Settings.Secure.getString(
+            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        val me = "$packageName/${TrexpandaAccessibilityService::class.java.name}"
+        return enabled.split(':').any { it.equals(me, ignoreCase = true) }
     }
 
     // ---- account deletion ----------------------------------------------------

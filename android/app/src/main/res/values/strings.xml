@@ -3,4 +3,7 @@
     <string name="app_name">Trexpanda</string>
     <string name="ime_label">Trexpanda Keyboard</string>
     <string name="ime_subtype_label">Trexpanda</string>
+    <string name="a11y_label">Trexpanda (any keyboard)</string>
+    <string name="a11y_summary">Expand your snippet triggers while typing with any keyboard.</string>
+    <string name="a11y_description">Lets Trexpanda expand your snippet triggers (like ;addr) while you type with any keyboard, such as Gboard. It only looks at the text field you are typing in, never password fields, and only to replace a trigger with your snippet. Nothing you type is stored, logged or sent anywhere.</string>
 </resources>

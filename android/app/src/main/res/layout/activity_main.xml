@@ -299,6 +299,15 @@
                             android:textAllCaps="false"
                             android:text="Switch to it" />
                     </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/anyKeyboardButton"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:textAllCaps="false"
+                        android:text="Use with Gboard or any keyboard" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
