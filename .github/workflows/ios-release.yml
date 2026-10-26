@@ -25,7 +25,7 @@ jobs:
     env:
       KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
       ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-      TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+      TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID || 'KXT9A4CRLY' }}
     steps:
       - uses: actions/checkout@v5
       - name: Check configuration

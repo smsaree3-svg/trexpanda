@@ -14,7 +14,7 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "0.3.5"
+    MARKETING_VERSION: "0.3.12"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     # Set this to your Apple Developer Team ID (Membership page), or pick the
