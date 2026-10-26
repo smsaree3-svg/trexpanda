@@ -37,11 +37,13 @@ jobs:
         shell: bash
         run: |
           log="$RUNNER_TEMP/gradle.log"
-          # Kotlin/Java compile errors, failed tests, and Gradle's summary.
-          grep -E '^e: |error:|FAILED|AAPT|Could not|> ' "$log" | head -40 | while IFS= read -r line; do
-            echo "::error::${line//%/%25}"
-          done
-          awk '/What went wrong/{f=1} f{print} /Try:/{exit}' "$log" | head -30 | sed 's/^/::error::/' 
+          # GitHub keeps only 10 annotations per step, so send the useful lines as one.
+          { awk '/What went wrong/{f=1} f{print} /\* Try:/{exit}' "$log"
+            grep -E '^e: |error:|ERROR:|AAPT|FAILED|Unresolved|Could not' "$log" | grep -v '^> Task' ; } \
+            | head -60 > "$RUNNER_TEMP/errors.txt"
+          msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Gradle failure::${msg}"
+          cat "$RUNNER_TEMP/errors.txt" >> "$GITHUB_STEP_SUMMARY"
       - name: Attach debug APK
         uses: actions/upload-artifact@v6
         with:

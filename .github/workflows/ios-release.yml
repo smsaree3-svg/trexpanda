@@ -1,0 +1,87 @@
+name: iOS — TestFlight release
+
+# Archives, signs and uploads the iPhone app to App Store Connect (TestFlight).
+# Signing is fully automatic through an App Store Connect API key, so no
+# certificates or profiles are stored in the repo.
+#
+# Needs, in Settings → Secrets and variables → Actions:
+#   secrets  APPSTORE_KEY_ID, APPSTORE_ISSUER_ID, APPSTORE_PRIVATE_KEY (the .p8 contents)
+#   vars     APPLE_TEAM_ID, SUPABASE_URL, SUPABASE_ANON_KEY
+on:
+  push:
+    tags: ['ios-v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    env:
+      KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+      ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check configuration
+        shell: bash
+        run: |
+          missing=()
+          for v in KEY_ID ISSUER_ID TEAM_ID; do [ -n "${!v}" ] || missing+=("$v"); done
+          [ -n "${{ vars.SUPABASE_URL }}" ] || missing+=(SUPABASE_URL)
+          [ -n "${{ vars.SUPABASE_ANON_KEY }}" ] || missing+=(SUPABASE_ANON_KEY)
+          if [ ${#missing[@]} -gt 0 ]; then echo "::error::Missing settings: ${missing[*]}"; exit 1; fi
+      - name: Install the API key
+        shell: bash
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s' "${{ secrets.APPSTORE_PRIVATE_KEY }}" > ~/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8
+          echo "KEY_PATH=$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8" >> "$GITHUB_ENV"
+      - name: Generate the Xcode project
+        run: brew install xcodegen && xcodegen generate
+      - name: Archive
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild archive -project Trexpanda.xcodeproj -scheme Trexpanda \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Trexpanda.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            SUPABASE_URL='${{ vars.SUPABASE_URL }}' SUPABASE_ANON_KEY='${{ vars.SUPABASE_ANON_KEY }}' \
+            2>&1 | tee "$RUNNER_TEMP/xcode.log"
+      - name: Upload to TestFlight
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PLIST
+          set -o pipefail
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Trexpanda.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER_ID" \
+            2>&1 | tee -a "$RUNNER_TEMP/xcode.log"
+      - name: Report errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          grep -E 'error:|\*\* .* FAILED|failed \(' "$RUNNER_TEMP/xcode.log" | sort -u | head -60 > "$RUNNER_TEMP/errors.txt" || true
+          msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Xcode failure::${msg}"
+      - name: Remove the API key
+        if: always()
+        run: rm -rf ~/.appstoreconnect
