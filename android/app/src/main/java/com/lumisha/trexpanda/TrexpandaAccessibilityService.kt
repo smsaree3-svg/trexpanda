@@ -30,6 +30,7 @@ class TrexpandaAccessibilityService : AccessibilityService() {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) return
         if (event.packageName == packageName) return // our own app/keyboard handles itself
         if (event.addedCount <= 0) return             // only react to typing, not deletions
+        if (trexpandaKeyboardActive()) return         // our own keyboard already expands
         val node = event.source ?: return
         try {
             if (!node.isEditable || node.isPassword) return
@@ -59,6 +60,14 @@ class TrexpandaAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    /** True when the Trexpanda keyboard is the current input method (it expands itself). */
+    private fun trexpandaKeyboardActive(): Boolean {
+        val current = android.provider.Settings.Secure.getString(
+            contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD
+        ) ?: return false
+        return current.startsWith("$packageName/")
+    }
 
     /** Reload snippets when the app (or sync) has saved changes. */
     private fun reloadIfChanged() {
