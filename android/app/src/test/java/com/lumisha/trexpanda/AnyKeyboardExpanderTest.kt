@@ -37,4 +37,19 @@ class AnyKeyboardExpanderTest {
         assertEquals(2, AnyKeyboardExpander.charsForLastGraphemes("ab😀", 1))
         assertEquals(0, AnyKeyboardExpander.charsForLastGraphemes("abc", 0))
     }
+
+    @Test fun tokenAndWhenToSuggest() {
+        assertEquals(",c", AnyKeyboardExpander.currentToken("hi ,c", 5))
+        assertEquals("", AnyKeyboardExpander.currentToken("hi ", 3))
+        assertEquals(true, AnyKeyboardExpander.shouldSuggest(";a"))
+        assertEquals(false, AnyKeyboardExpander.shouldSuggest("hi"))   // plain short word
+        assertEquals(true, AnyKeyboardExpander.shouldSuggest("git"))
+        assertEquals(false, AnyKeyboardExpander.shouldSuggest(""))
+    }
+
+    @Test fun tappedSuggestionReplacesThePartialTrigger() {
+        val e = AnyKeyboardExpander.applySuggestion(engine(",ch" to "Checking."), "ok ,c tail", 5, ",ch")!!
+        assertEquals("ok Checking. tail", e.text)
+        assertEquals(12, e.caret)
+    }
 }

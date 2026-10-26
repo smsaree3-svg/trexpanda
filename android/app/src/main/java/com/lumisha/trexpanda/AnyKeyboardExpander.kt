@@ -27,6 +27,32 @@ object AnyKeyboardExpander {
         return Edit(newText, kept.length + action.replacement.length - back, action.trigger)
     }
 
+    /** The run of non-space characters just before the caret (what the user is typing). */
+    fun currentToken(fullText: String, caret: Int): String {
+        if (caret <= 0 || caret > fullText.length) return ""
+        return Regex("(\\S+)$").find(fullText.substring(0, caret))?.value ?: ""
+    }
+
+    /**
+     * Whether to show suggestions for this token. Triggers usually start with a
+     * symbol (";addr", ",ch", "!rc"); plain words need 3+ letters so ordinary
+     * typing doesn't pop suggestions on every word.
+     */
+    fun shouldSuggest(token: String): Boolean =
+        token.isNotEmpty() && (!token[0].isLetterOrDigit() || token.length >= 3)
+
+    /** Replace the token before the caret with the snippet for [trigger] (a tapped suggestion). */
+    fun applySuggestion(engine: ExpanderEngine, fullText: String, caret: Int, trigger: String): Edit? {
+        if (caret < 0 || caret > fullText.length) return null
+        val action = engine.snippetAction(trigger) ?: return null
+        val before = fullText.substring(0, caret)
+        val token = currentToken(fullText, caret)
+        val kept = before.substring(0, before.length - token.length)
+        val after = fullText.substring(caret)
+        val back = charsForLastGraphemes(action.replacement, action.caretBack)
+        return Edit(kept + action.replacement + after, kept.length + action.replacement.length - back, action.trigger)
+    }
+
     /** Number of UTF-16 chars making up the last [graphemes] user-visible characters of [s]. */
     internal fun charsForLastGraphemes(s: String, graphemes: Int): Int {
         if (graphemes <= 0 || s.isEmpty()) return 0
