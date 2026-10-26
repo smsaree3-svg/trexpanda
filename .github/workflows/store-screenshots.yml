@@ -1,0 +1,40 @@
+name: Store screenshots
+
+# Renders real Android app screens (Robolectric) for the Google Play listing and
+# keeps them in a private draft release named store-screenshots.
+on:
+  push:
+    branches: [store-shots]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '8.13'
+      - name: Render screens
+        env:
+          TREX_STORE_SHOTS: ${{ runner.temp }}/shots
+        run: gradle --no-daemon --console=plain testDebugUnitTest --tests '*StoreScreenshots*'
+      - name: Publish to a private draft release
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l "$RUNNER_TEMP/shots"
+          gh release delete store-screenshots --yes 2>/dev/null || true
+          gh release create store-screenshots "$RUNNER_TEMP"/shots/*.png --draft --target "$GITHUB_SHA" \
+            --title "Store screenshots" --notes "Rendered app screens for the Play listing. Private draft."
