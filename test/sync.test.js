@@ -209,3 +209,25 @@ test('Store.setPersonal assigns ids, stamps updatedAt, and tombstones deletions'
 });
 
 console.log('\nsync: ' + passed + ' passed');
+
+test('Store.ensurePersonalIds backfills ids so legacy snippets sync instead of vanishing', () => {
+  const data = { personalSnippets: [
+    { trigger: ',a', replacement: 'A' },                                        // legacy: no id
+    { id: 'abc', trigger: ',b', replacement: 'B', updatedAt: '2026-01-01T00:00:00.000Z' }, // non-UUID id
+    { id: '11111111-2222-4333-8444-555555555555', trigger: ',c', replacement: 'C', updatedAt: '2026-01-01T00:00:00.000Z' },
+  ] };
+  const store = new Store({ get: (k, d) => (k in data ? data[k] : d), set: (k, v) => { data[k] = v; } });
+  assert.strictEqual(store.ensurePersonalIds(), 2);
+  const list = store.getPersonal();
+  const UUID = /^[0-9a-f-]{36}$/i;
+  assert.ok(list.every((s) => UUID.test(s.id)));
+  assert.strictEqual(list[2].id, '11111111-2222-4333-8444-555555555555'); // valid ids untouched
+  // The merge now keeps all three and pushes the two the cloud has never seen.
+  const merged = mergeSnippetsForSync({ live: list, tombstones: [], remote: [
+    { id: '11111111-2222-4333-8444-555555555555', trigger: ',c', replacement: 'C', enabled: true,
+      updated_at: '2026-01-01T00:00:00.000Z', deleted_at: null },
+  ], now: Date.now() });
+  assert.strictEqual(merged.live.length, 3);
+  assert.strictEqual(merged.push.length, 2);
+  assert.strictEqual(store.ensurePersonalIds(), 0); // idempotent
+});

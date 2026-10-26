@@ -392,6 +392,36 @@ class Store {
     this.setSnippetTombstones(liveTombs);
   }
 
+  /**
+   * Give every personal snippet a UUID before syncing. Snippets created by
+   * versions before cross-device sync have no `id` (or a non-UUID one); the sync
+   * merge keys on id, so without this they were never uploaded — and could be
+   * dropped from the local list by the merge. Returns how many were fixed.
+   */
+  ensurePersonalIds() {
+    const list = this.getPersonal();
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const iso = isoAt(Date.now());
+    const used = new Set();
+    let fixed = 0;
+    const out = list.map((raw) => {
+      if (!raw || typeof raw !== 'object') return raw;
+      const s = { ...raw };
+      if (!s.id || !UUID_RE.test(String(s.id)) || used.has(s.id)) {
+        s.id = genSnippetId();
+        s.updatedAt = iso; // new to the cloud: make sure it wins and is pushed
+        fixed++;
+      } else if (!s.updatedAt) {
+        s.updatedAt = iso;
+        fixed++;
+      }
+      used.add(s.id);
+      return s;
+    });
+    if (fixed) this.backend.set('personalSnippets', out);
+    return fixed;
+  }
+
   /** Overwrite personal snippets + tombstones with a merged sync result (raw). */
   applySyncedPersonal(live, tombstones) {
     this.backend.set('personalSnippets', Array.isArray(live) ? live : []);

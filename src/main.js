@@ -394,6 +394,7 @@ async function syncPersonal() {
   try { signedIn = (await cloud.status()).signedIn; } catch (_) {}
   if (!signedIn) return { ok: false, error: 'Not signed in.' };
   try {
+    store.ensurePersonalIds(); // older snippets have no id and would never upload
     const remote = await cloud.pullSnippets();
     const merged = mergeSnippetsForSync({
       live: store.getPersonal(),
