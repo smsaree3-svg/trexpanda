@@ -45,7 +45,10 @@ function fakeClient({ rpc = {}, profiles = [] } = {}) {
 }
 
 function service(client) {
-  const svc = new CloudService(null);
+  // An in-memory session store: on CI the real supabase-js is installed and the
+  // cloud is configured, so the constructor builds a real client that reads it.
+  const mem = {};
+  const svc = new CloudService({ get: (k, d) => (k in mem ? mem[k] : d), set: (k, v) => { mem[k] = v; } });
   svc.client = client;
   svc._requireClient = () => client;
   return svc;

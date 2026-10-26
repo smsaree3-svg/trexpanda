@@ -29,11 +29,12 @@ function makeStorage(backend) {
   const key = (k) => 'sbSession.' + String(k).replace(/[.]/g, '_');
   return {
     getItem: (k) => {
+      if (!backend) return null; // no persistent store: behave as "no saved session"
       const v = backend.get(key(k), null);
       return v == null ? null : String(v);
     },
-    setItem: (k, v) => backend.set(key(k), String(v)),
-    removeItem: (k) => backend.set(key(k), null),
+    setItem: (k, v) => { if (backend) backend.set(key(k), String(v)); },
+    removeItem: (k) => { if (backend) backend.set(key(k), null); },
   };
 }
 
