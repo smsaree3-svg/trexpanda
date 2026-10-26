@@ -22,7 +22,7 @@ struct SupabaseAPI {
         var offset = 0
         var all: [Snippet] = []
         while true {
-            let url = AppConfig.restURL("snippets?user_id=eq.\(uid)&select=id,trigger,replacement,label,html,enabled,updated_at,deleted_at&order=id&limit=\(page)&offset=\(offset)")
+            let url = AppConfig.restURL("snippets?user_id=eq.\(uid)&select=id,trigger,replacement,label,html,attachment,enabled,updated_at,deleted_at&order=id&limit=\(page)&offset=\(offset)")
             let data = try await send(url, method: "GET", token: token, body: nil)
             let rows = (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
             all += rows.compactMap(Self.snippet(fromRow:))
@@ -104,6 +104,7 @@ struct SupabaseAPI {
                        replacement: (r["replacement"] as? String) ?? "",
                        label: r["label"] as? String,
                        html: r["html"] as? String,
+                       attachment: SnippetAttachment(json: r["attachment"]),
                        enabled: (r["enabled"] as? Bool) ?? true,
                        updatedAt: millis(r["updated_at"]) ?? 0,
                        deletedAt: millis(r["deleted_at"]))
@@ -120,6 +121,7 @@ struct SupabaseAPI {
         row["trigger"] = s.trigger.isEmpty ? NSNull() : s.trigger
         row["label"] = s.label ?? NSNull()
         row["html"] = s.html ?? NSNull()
+        row["attachment"] = s.attachment?.json ?? NSNull()
         row["deleted_at"] = s.deletedAt.map(isoString) ?? NSNull()
         return row
     }

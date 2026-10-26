@@ -10,7 +10,7 @@ import java.text.BreakIterator
  */
 object AnyKeyboardExpander {
 
-    data class Edit(val text: String, val caret: Int, val trigger: String)
+    data class Edit(val text: String, val caret: Int, val trigger: String, val attachment: String? = null)
 
     fun expand(engine: ExpanderEngine, fullText: String, caret: Int): Edit? {
         if (caret < 0 || caret > fullText.length) return null
@@ -24,7 +24,7 @@ object AnyKeyboardExpander {
         // rewrite the field, which would reset the keyboard and could loop.
         if (newText == fullText) return null
         val back = charsForLastGraphemes(action.replacement, action.caretBack)
-        return Edit(newText, kept.length + action.replacement.length - back, action.trigger)
+        return Edit(newText, kept.length + action.replacement.length - back, action.trigger, action.attachment)
     }
 
     /** The run of non-space characters just before the caret (what the user is typing). */
@@ -50,7 +50,7 @@ object AnyKeyboardExpander {
         val kept = before.substring(0, before.length - token.length)
         val after = fullText.substring(caret)
         val back = charsForLastGraphemes(action.replacement, action.caretBack)
-        return Edit(kept + action.replacement + after, kept.length + action.replacement.length - back, action.trigger)
+        return Edit(kept + action.replacement + after, kept.length + action.replacement.length - back, action.trigger, action.attachment)
     }
 
     /** Number of UTF-16 chars making up the last [graphemes] user-visible characters of [s]. */

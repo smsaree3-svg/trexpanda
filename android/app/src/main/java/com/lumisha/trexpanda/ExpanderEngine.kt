@@ -27,6 +27,8 @@ class ExpanderEngine(
         val backspaces: Int,
         val caretBack: Int,
         val html: String? = null,
+        /** Raw attachment JSON ({type,name,mime,data}) to deliver after the text. */
+        val attachment: String? = null,
     )
 
     /** A live-autocomplete candidate. */
@@ -90,6 +92,7 @@ class ExpanderEngine(
             backspaces = best.trigger.length,
             caretBack = rendered.caretBack,
             html = snippet.html?.let { renderHtml(it) },
+            attachment = snippet.attachment,
         )
     }
 
@@ -128,6 +131,7 @@ class ExpanderEngine(
             backspaces = trigger.length,
             caretBack = rendered.caretBack,
             html = snippet.html?.let { renderHtml(it) },
+            attachment = snippet.attachment,
         )
     }
 
@@ -181,6 +185,7 @@ class ExpanderEngine(
             backspaces = best.trigger.length,
             caretBack = rendered.caretBack,
             html = snippet.html?.let { renderHtml(it) },
+            attachment = snippet.attachment,
         )
     }
 

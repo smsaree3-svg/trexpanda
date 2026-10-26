@@ -6,4 +6,6 @@
     <string name="a11y_label">Trexpanda (any keyboard)</string>
     <string name="a11y_summary">Expand your snippet triggers while typing with any keyboard.</string>
     <string name="a11y_description">Lets Trexpanda expand your snippet triggers (like ;addr) while you type with any keyboard, such as Gboard. It only looks at the text field you are typing in, never password fields, and only to replace a trigger with your snippet. Nothing you type is stored, logged or sent anywhere.</string>
+    <string name="attachment_copied">📎 %1$s copied. If it didn\'t attach, long-press the box and tap Paste.</string>
+    <string name="attachment_failed">Couldn\'t attach this snippet\'s file.</string>
 </resources>

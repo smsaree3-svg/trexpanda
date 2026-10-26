@@ -2,7 +2,9 @@ package com.lumisha.trexpanda
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
@@ -13,6 +15,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -47,6 +50,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: SnippetAdapter
     private lateinit var emptyState: View
+
+    /** Receives the file picked for the snippet being edited. */
+    private var onAttachmentPicked: ((Uri) -> Unit)? = null
+    private val pickAttachment = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) onAttachmentPicked?.invoke(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -362,6 +371,28 @@ class MainActivity : AppCompatActivity() {
         val replacementInput = view.findViewById<EditText>(R.id.replacementInput)
         val labelInput = view.findViewById<EditText>(R.id.labelInput)
         val enabledCheck = view.findViewById<CompoundButton>(R.id.enabledCheck)
+        val attachmentName = view.findViewById<TextView>(R.id.attachmentName)
+        val attachButton = view.findViewById<Button>(R.id.attachButton)
+        val removeAttachment = view.findViewById<Button>(R.id.removeAttachmentButton)
+
+        // The image/file synced with this snippet (same 1 MB limit as the desktop app).
+        var attachment: String? = existing?.attachment
+        fun showAttachment() {
+            val att = SnippetAttachment.parse(attachment)
+            attachmentName.text = if (att == null) "No attachment"
+                else "📎 " + att.name + (if (att.isImage) " (image)" else " (file)")
+            attachButton.text = if (att == null) "📎 Attach image or file" else "Replace"
+            removeAttachment.visibility = if (att == null) View.GONE else View.VISIBLE
+        }
+        showAttachment()
+        attachButton.setOnClickListener {
+            onAttachmentPicked = { uri ->
+                val att = readAttachment(uri)
+                if (att != null) { attachment = att.toJson(); showAttachment() }
+            }
+            try { pickAttachment.launch(arrayOf("*/*")) } catch (_: Exception) { toast("No file picker available.") }
+        }
+        removeAttachment.setOnClickListener { attachment = null; showAttachment() }
 
         existing?.let {
             triggerInput.setText(it.trigger)
@@ -385,12 +416,47 @@ class MainActivity : AppCompatActivity() {
                     // changed, or the desktop would keep typing the old version.
                     html = if (existing != null && existing.replacement != replacement) null else existing?.html,
                     label = label,
+                    attachment = attachment,
                     enabled = enabledCheck.isChecked,
                 )
                 saveSnippet(existing, updated)
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    /** Read a picked file into an attachment, or explain why it can't be used. */
+    private fun readAttachment(uri: Uri): SnippetAttachment? = try {
+        var name = "attachment"
+        var size = -1L
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst()) {
+                c.getString(0)?.let { name = it }
+                if (!c.isNull(1)) size = c.getLong(1)
+            }
+        }
+        if (size > SnippetAttachment.MAX_BYTES) {
+            toast("That file is too large (max 1 MB)."); null
+        } else {
+            val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                val buf = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(16 * 1024)
+                while (true) {
+                    val n = input.read(chunk)
+                    if (n < 0) break
+                    buf.write(chunk, 0, n)
+                    if (buf.size() > SnippetAttachment.MAX_BYTES) break
+                }
+                buf.toByteArray()
+            }
+            when {
+                bytes == null || bytes.isEmpty() -> { toast("Couldn't read that file."); null }
+                bytes.size > SnippetAttachment.MAX_BYTES -> { toast("That file is too large (max 1 MB)."); null }
+                else -> SnippetAttachment.fromBytes(bytes, name, contentResolver.getType(uri))
+            }
+        }
+    } catch (_: Exception) {
+        toast("Couldn't read that file."); null
     }
 
     private fun saveSnippet(existing: Snippet?, updated: Snippet) {

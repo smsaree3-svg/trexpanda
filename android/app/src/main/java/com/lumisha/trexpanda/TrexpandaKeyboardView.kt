@@ -101,7 +101,7 @@ class TrexpandaKeyboardView(
         if (items.isEmpty()) { showHint(); return }
         for (s in items) {
             val chip = TextView(context).apply {
-                text = s.trigger
+                text = if (s.hasAttachment) s.trigger + " 📎" else s.trigger
                 setTextColor(color(R.color.brand))
                 textSize = 14f
                 typeface = android.graphics.Typeface.MONOSPACE

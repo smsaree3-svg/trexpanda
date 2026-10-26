@@ -17,6 +17,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import java.io.File
 
 /**
@@ -99,6 +100,25 @@ class TrexpandaAccessibilityService : AccessibilityService() {
                 putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, edit.caret)
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel)
+            pasteAttachment(node, edit.attachment)
+        }
+    }
+
+    /**
+     * Deliver the snippet's image/file after its text: put it on the clipboard
+     * and paste it into the same field. Apps that take pasted images/files
+     * (WhatsApp, Gmail, Messages...) attach it; plain text boxes paste nothing,
+     * and it stays on the clipboard for a manual long-press -> Paste.
+     */
+    private fun pasteAttachment(node: AccessibilityNodeInfo, raw: String?) {
+        val att = SnippetAttachment.parse(raw) ?: return
+        try {
+            AttachmentFiles.copyToClipboard(this, att, AttachmentFiles.uriFor(this, att))
+            lastEditAt = System.currentTimeMillis()
+            node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            Toast.makeText(this, getString(R.string.attachment_copied, att.name), Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, getString(R.string.attachment_failed), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -148,7 +168,7 @@ class TrexpandaAccessibilityService : AccessibilityService() {
         row.removeAllViews()
         for (item in items) {
             val chip = TextView(this).apply {
-                text = item.trigger + "  " + item.preview
+                text = item.trigger + "  " + (if (item.hasAttachment) "📎 " else "") + item.preview
                 maxWidth = dp(260)
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END

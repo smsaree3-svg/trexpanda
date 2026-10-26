@@ -14,6 +14,8 @@ final class ExpanderEngine {
         let backspaces: Int
         /// How far to move the caret back afterwards (for a `$|` marker), in characters.
         let caretBack: Int
+        /// The snippet's image/file to deliver after the text, if any.
+        var attachment: SnippetAttachment? = nil
     }
 
     struct Suggestion {
@@ -62,7 +64,8 @@ final class ExpanderEngine {
             trigger: e.trigger,
             replacement: rendered.text,
             backspaces: e.trigger.count,
-            caretBack: rendered.caretBack
+            caretBack: rendered.caretBack,
+            attachment: e.snippet.attachment
         )
     }
 
@@ -73,7 +76,8 @@ final class ExpanderEngine {
         guard let e = byLower[trigger.lowercased()] else { return nil }
         let rendered = render(e.snippet.replacement)
         return Action(trigger: e.trigger, replacement: rendered.text,
-                      backspaces: trigger.count, caretBack: rendered.caretBack)
+                      backspaces: trigger.count, caretBack: rendered.caretBack,
+                      attachment: e.snippet.attachment)
     }
 
     /// Live suggestions from the last non-space token of the given text.

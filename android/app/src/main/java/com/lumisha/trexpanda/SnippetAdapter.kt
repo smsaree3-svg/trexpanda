@@ -38,7 +38,8 @@ class SnippetAdapter(
         fun bind(s: Snippet) {
             trigger.text = s.trigger ?: ""
             val raw = s.replacement.replace(Regex("\\s+"), " ").trim()
-            preview.text = if (s.enabled) raw else "$raw  (disabled)"
+            val att = SnippetAttachment.parse(s.attachment)?.let { "📎 ${it.name}  " } ?: ""
+            preview.text = if (s.enabled) att + raw else "$att$raw  (disabled)"
             preview.alpha = if (s.enabled) 1f else 0.5f
             itemView.setOnClickListener { onEdit(s) }
             delete.setOnClickListener { onDelete(s) }

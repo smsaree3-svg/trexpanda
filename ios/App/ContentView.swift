@@ -1,5 +1,7 @@
 import AuthenticationServices
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
@@ -72,6 +74,11 @@ struct SnippetRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(snippet.trigger).font(.body.monospaced().weight(.semibold))
+                if let att = snippet.attachment {
+                    Image(systemName: att.isImage ? "photo" : "paperclip")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel("Has attachment \(att.name)")
+                }
                 if !snippet.enabled {
                     Text("Off").font(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(Color.secondary.opacity(0.2)))
@@ -88,6 +95,9 @@ struct SnippetEditView: View {
     @Environment(\.dismiss) private var dismiss
     @State var snippet: Snippet
     let onSave: (Snippet) -> Void
+    @State private var photo: PhotosPickerItem?
+    @State private var pickingFile = false
+    @State private var attachError: String?
 
     var body: some View {
         NavigationStack {
@@ -103,6 +113,31 @@ struct SnippetEditView: View {
                     TextEditor(text: $snippet.replacement).frame(minHeight: 140)
                 }
                 Section {
+                    if let att = snippet.attachment {
+                        HStack {
+                            if att.isImage, let data = att.bytes, let img = UIImage(data: data) {
+                                Image(uiImage: img).resizable().scaledToFill()
+                                    .frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 6))
+                            } else {
+                                Image(systemName: "doc").font(.title2).frame(width: 44, height: 44)
+                            }
+                            Text(att.name).lineLimit(1).truncationMode(.middle)
+                            Spacer()
+                            Button("Remove", role: .destructive) { snippet.attachment = nil }
+                                .buttonStyle(.borderless)
+                        }
+                    }
+                    PhotosPicker(selection: $photo, matching: .images) {
+                        Label(snippet.attachment == nil ? "Add a photo" : "Replace with a photo", systemImage: "photo")
+                    }
+                    Button { pickingFile = true } label: {
+                        Label(snippet.attachment == nil ? "Add a file" : "Replace with a file", systemImage: "paperclip")
+                    }
+                    if let attachError { Text(attachError).font(.footnote).foregroundStyle(.red) }
+                } header: { Text("Attachment") } footer: {
+                    Text("Sent after the text when the snippet expands (up to 1 MB). On iPhone it's copied so you can tap Paste. Syncs with your computer and other phones.")
+                }
+                Section {
                     TextField("Label (optional)", text: Binding(
                         get: { snippet.label ?? "" },
                         set: { snippet.label = $0.isEmpty ? nil : $0 }))
@@ -110,6 +145,13 @@ struct SnippetEditView: View {
                 } footer: {
                     Text("Tokens: {date}, {time}, {datetime}. Put $| where the cursor should land.")
                 }
+            }
+            .onChange(of: photo) { item in
+                guard let item else { return }
+                Task { await loadPhoto(item) }
+            }
+            .fileImporter(isPresented: $pickingFile, allowedContentTypes: [.item]) { result in
+                if case .success(let url) = result { loadFile(url) }
             }
             .navigationTitle(snippet.id.isEmpty ? "New snippet" : "Edit snippet")
             .navigationBarTitleDisplayMode(.inline)
@@ -125,6 +167,46 @@ struct SnippetEditView: View {
                 }
             }
         }
+    }
+}
+
+extension SnippetEditView {
+    /// Photos become a JPEG of at most 1 MB, so every device (and Windows) can open them.
+    @MainActor
+    func loadPhoto(_ item: PhotosPickerItem) async {
+        attachError = nil
+        defer { photo = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data),
+              let jpeg = Self.jpegUnderLimit(image) else {
+            attachError = "Couldn't use that photo."
+            return
+        }
+        snippet.attachment = SnippetAttachment(bytes: jpeg, name: "photo.jpg", mime: "image/jpeg")
+    }
+
+    static func jpegUnderLimit(_ image: UIImage) -> Data? {
+        var img = image
+        for _ in 0..<8 {
+            for q in [0.85, 0.7, 0.55] {
+                if let d = img.jpegData(compressionQuality: q), d.count <= SnippetAttachment.maxBytes { return d }
+            }
+            let size = CGSize(width: img.size.width * 0.75, height: img.size.height * 0.75)
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1
+            let src = img
+            img = UIGraphicsImageRenderer(size: size, format: format).image { _ in src.draw(in: CGRect(origin: .zero, size: size)) }
+        }
+        return nil
+    }
+
+    func loadFile(_ url: URL) {
+        attachError = nil
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { attachError = "Couldn't read that file."; return }
+        guard data.count <= SnippetAttachment.maxBytes else { attachError = "That file is too large (max 1 MB)."; return }
+        let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        snippet.attachment = SnippetAttachment(bytes: data, name: url.lastPathComponent, mime: mime)
     }
 }
 

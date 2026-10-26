@@ -1,10 +1,15 @@
 package com.lumisha.trexpanda
 
+import android.content.ClipDescription
 import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.widget.Toast
+import androidx.core.view.inputmethod.EditorInfoCompat
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 
 /**
  * The Trexpanda keyboard (IME). Because we own the keyboard, text expansion
@@ -108,6 +113,7 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
         }
         engine.reset()
         clearSuggestions()
+        deliverAttachment(action.attachment)
     }
 
     // ---- helpers -------------------------------------------------------------
@@ -133,6 +139,39 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
         }
         engine.reset()
         clearSuggestions()
+        deliverAttachment(action.attachment)
+    }
+
+    /**
+     * Send the snippet's image/file after its text. Apps that accept rich content
+     * from keyboards (chat apps, Gmail, Messages...) receive it directly; anywhere
+     * else it goes on the clipboard so a long-press -> Paste attaches it.
+     */
+    private fun deliverAttachment(raw: String?) {
+        val att = SnippetAttachment.parse(raw) ?: return
+        try {
+            val ic = currentInputConnection
+            val info = currentInputEditorInfo
+            val mime = att.effectiveMime()
+            val accepted = info?.let { EditorInfoCompat.getContentMimeTypes(it) }.orEmpty()
+            fun accepts(m: String) = accepted.any { ClipDescription.compareMimeTypes(m, it) }
+            if (ic != null && info != null) {
+                // Many chat boxes accept PNG/GIF/WebP but not JPEG; send those as PNG.
+                val asPng = !accepts(mime) && att.isImage && accepts("image/png")
+                if (accepts(mime) || asPng) {
+                    val uri = AttachmentFiles.uriFor(this, att, asPng)
+                    val content = InputContentInfoCompat(
+                        uri, ClipDescription(att.name, arrayOf(if (asPng) "image/png" else mime)), null)
+                    val ok = InputConnectionCompat.commitContent(
+                        ic, info, content, InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null)
+                    if (ok) return
+                }
+            }
+            AttachmentFiles.copyToClipboard(this, att, AttachmentFiles.uriFor(this, att))
+            Toast.makeText(this, getString(R.string.attachment_copied, att.name), Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, getString(R.string.attachment_failed), Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun moveCaretBack(ic: InputConnection, steps: Int) {

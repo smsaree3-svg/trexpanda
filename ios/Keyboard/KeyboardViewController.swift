@@ -1,4 +1,5 @@
 import UIKit
+import UniformTypeIdentifiers
 
 /// The Trexpanda keyboard. A complete QWERTY keyboard that expands your snippet
 /// triggers as you type, with a suggestion bar for triggers that start with what
@@ -13,6 +14,8 @@ final class KeyboardViewController: UIInputViewController {
     private let engine = ExpanderEngine()
     private var shifted = true
     private var symbols = false
+    /// A short message shown in the suggestion bar (e.g. "attachment copied").
+    private var notice: String?
 
     private let suggestionBar = UIStackView()
     private let keyRows = UIStackView()
@@ -73,6 +76,7 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: Typing
 
     private func type(_ text: String) {
+        notice = nil
         textDocumentProxy.insertText(text)
         if shifted && !symbols { shifted = false; rebuildKeys() }
         expandIfTriggered()
@@ -91,9 +95,29 @@ final class KeyboardViewController: UIInputViewController {
         textDocumentProxy.insertText(action.replacement)
         if action.caretBack > 0 { textDocumentProxy.adjustTextPosition(byCharacterOffset: -action.caretBack) }
         UIDevice.current.playInputClick()
+        if let att = action.attachment { copyAttachment(att) }
+    }
+
+    /// iOS keyboards can only type text, so the snippet's image/file goes on the
+    /// clipboard right after its text; one tap on Paste attaches it.
+    private func copyAttachment(_ att: SnippetAttachment) {
+        guard hasFullAccess else {
+            notice = "Allow Full Access to paste this snippet's attachment"
+            return
+        }
+        guard let data = att.bytes else { notice = "Couldn't read this snippet's attachment"; return }
+        let ext = (att.name as NSString).pathExtension
+        let type = (att.mime.isEmpty ? nil : UTType(mimeType: att.mime))
+            ?? (ext.isEmpty ? nil : UTType(filenameExtension: ext))
+            ?? (att.isImage ? UTType.png : UTType.data)
+        let provider = NSItemProvider(item: data as NSData, typeIdentifier: type.identifier)
+        provider.suggestedName = att.name
+        UIPasteboard.general.setItemProviders([provider], localOnly: false, expirationDate: nil)
+        notice = "📎 \(att.name) copied. Tap the text box and choose Paste"
     }
 
     private func backspace() {
+        notice = nil
         textDocumentProxy.deleteBackward()
         refreshSuggestions()
     }
@@ -104,6 +128,10 @@ final class KeyboardViewController: UIInputViewController {
         suggestionBar.arrangedSubviews.forEach { $0.removeFromSuperview() }
         if !hasFullAccess || !SharedStore.isAvailable {
             suggestionBar.addArrangedSubview(hint("Turn on Allow Full Access in Settings to use your snippets"))
+            return
+        }
+        if let notice {
+            suggestionBar.addArrangedSubview(hint(notice))
             return
         }
         let before = textDocumentProxy.documentContextBeforeInput ?? ""
@@ -131,7 +159,8 @@ final class KeyboardViewController: UIInputViewController {
         guard let action = engine.snippetAction(trigger) else { return }
         for _ in 0..<token.count { textDocumentProxy.deleteBackward() }
         apply(ExpanderEngine.Action(trigger: action.trigger, replacement: action.replacement,
-                                    backspaces: 0, caretBack: action.caretBack))
+                                    backspaces: 0, caretBack: action.caretBack,
+                                    attachment: action.attachment))
         refreshSuggestions()
     }
 

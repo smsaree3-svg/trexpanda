@@ -108,6 +108,7 @@ enum SnippetReconcile {
     }
 
     private static func signature(_ s: Snippet) -> String {
-        [s.trigger, s.replacement, s.label ?? "", s.html ?? "", s.enabled ? "1" : "0"].joined(separator: "\u{1F}")
+        let att = s.attachment.map { "\($0.type)|\($0.name)|\($0.mime)|\($0.data.count)|\($0.data.suffix(64))" } ?? ""
+        return [s.trigger, s.replacement, s.label ?? "", s.html ?? "", s.enabled ? "1" : "0", att].joined(separator: "\u{1F}")
     }
 }
