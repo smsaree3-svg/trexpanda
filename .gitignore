@@ -7,3 +7,4 @@ dist/
 # Local Supabase connection (copy from cloud-config.example.json).
 # The anon key is safe to ship, but keep local overrides out of git by default.
 src/cloud/cloud-config.json
+__pycache__/
