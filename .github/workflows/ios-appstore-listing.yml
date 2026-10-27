@@ -3,7 +3,11 @@ name: iOS — App Store listing
 # Fills in the App Store listing (text, category, age rating, price,
 # availability, review notes, build, screenshots) via the App Store Connect API.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Only these steps (comma-separated words, e.g. "age,review"); empty = all'
+        default: ''
 
 permissions:
   contents: read
@@ -15,6 +19,7 @@ jobs:
       KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
       ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
       REVIEW_PHONE: ${{ vars.APP_REVIEW_PHONE }}
+      ONLY_STEPS: ${{ github.event.inputs.only }}
     steps:
       - uses: actions/checkout@v5
       - name: Update the listing

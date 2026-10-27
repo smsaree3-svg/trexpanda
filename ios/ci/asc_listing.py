@@ -43,7 +43,7 @@ def call(method, path, body=None):
     url = path if path.startswith("http") else API + (path if path.startswith("/v") else "/v1" + path)
     r = requests.request(method, url, headers={"Authorization": "Bearer " + token()}, json=body, timeout=120)
     if r.status_code >= 300:
-        raise RuntimeError(f"{method} {path} -> {r.status_code}: {r.text[:700]}")
+        raise RuntimeError(f"{method} {path} -> {r.status_code}: " + " ".join(r.text.split())[:900])
     return r.json() if r.content else {}
 
 
@@ -51,7 +51,12 @@ def note(msg): print(f"::notice::{msg}", flush=True)
 def warn(msg): print(f"::warning::{msg}", flush=True)
 
 
+ONLY = [x.strip() for x in os.environ.get("ONLY_STEPS", "").split(",") if x.strip()]
+
+
 def step(name, fn):
+    if ONLY and not any(o.lower() in name.lower() for o in ONLY):
+        return
     try:
         fn(); note(f"{name}: done")
     except Exception as e:  # keep going; report every part
