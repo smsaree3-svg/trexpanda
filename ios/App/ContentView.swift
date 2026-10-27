@@ -156,7 +156,7 @@ struct SnippetEditView: View {
                     }
                     if let attachError { Text(attachError).font(.footnote).foregroundStyle(.red) }
                 } header: { Text("Attachment") } footer: {
-                    Text("Sent after the text when the snippet expands (up to 1 MB). On iPhone it's copied so you can tap Paste. Syncs with your computer and other phones.")
+                    Text("Sent with the text when the snippet expands (up to 1 MB). On iPhone, images are copied so you can tap Paste; files open the share sheet. Syncs with your computer and other phones.")
                 }
                 Section {
                     TextField("Label (optional)", text: Binding(

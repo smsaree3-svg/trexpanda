@@ -1,0 +1,26 @@
+name: iOS — App Store listing
+
+# Fills in the App Store listing (text, category, age rating, price,
+# availability, review notes, build, screenshots) via the App Store Connect API.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  listing:
+    runs-on: ubuntu-latest
+    env:
+      KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+      ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      REVIEW_PHONE: ${{ vars.APP_REVIEW_PHONE }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Update the listing
+        run: |
+          printf '%s' "${{ secrets.APPSTORE_PRIVATE_KEY }}" > "$RUNNER_TEMP/key.p8"
+          export KEY_PATH="$RUNNER_TEMP/key.p8"
+          pip install -q pyjwt cryptography requests
+          python3 ios/ci/asc_listing.py
+          rm -f "$RUNNER_TEMP/key.p8"

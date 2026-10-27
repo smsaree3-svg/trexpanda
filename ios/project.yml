@@ -25,7 +25,7 @@ settings:
     # protected by row-level security); left empty, the app works offline only.
     SUPABASE_URL: ""
     SUPABASE_ANON_KEY: ""
-    TARGETED_DEVICE_FAMILY: "1,2"
+    TARGETED_DEVICE_FAMILY: "1"
 
 targets:
   Trexpanda:
