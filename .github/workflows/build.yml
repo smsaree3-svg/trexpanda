@@ -111,16 +111,16 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Developer ID signing and notarization enabled."
 
-      # Windows: Microsoft Artifact Signing (Lumisha LLC). Needs the secrets
-      # AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET (an app
-      # registration with the "Artifact Signing Certificate Profile Signer" role
+      # Windows: Microsoft Artifact Signing (Lumisha LLC). Needs the secret
+      # AZURE_CLIENT_SECRET (tenant and client IDs default to the Lumisha LLC
+      # app registration "trexpanda-github-signing with the "Artifact Signing Certificate Profile Signer" role
       # on the signing account). Without them the build stays unsigned.
       - name: Configure Windows signing
         if: matrix.platform == 'win'
         shell: pwsh
         env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID || '9d97c606-a8bc-4973-8c89-b189f96d2dfb' }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID || 'f0697260-6a92-4e42-b280-78448cd1e5f2' }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SIGN_ENDPOINT: ${{ vars.AZURE_SIGN_ENDPOINT || 'https://eus.codesigning.azure.net/' }}
           SIGN_ACCOUNT: ${{ vars.AZURE_SIGN_ACCOUNT || 'trexpanda-signing' }}
