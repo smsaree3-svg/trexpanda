@@ -83,8 +83,37 @@ jobs:
             echo "No signing certificate configured — building unsigned."
           fi
 
+      # macOS: Developer ID signing + Apple notarization. The Developer ID private
+      # key (MAC_DEVID_KEY) is the only extra secret; the certificate comes from
+      # Apple via the App Store Connect API key, which also notarizes the app.
+      - name: Configure Developer ID signing and notarization
+        if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          MAC_DEVID_KEY: ${{ secrets.MAC_DEVID_KEY }}
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          ASC_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$MAC_DEVID_KEY" ] || [ -z "$KEY_ID" ]; then echo "Developer ID key not configured; building unsigned."; exit 0; fi
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s' "$ASC_KEY" > "$RUNNER_TEMP/asc/AuthKey_$KEY_ID.p8"
+          export KEY_PATH="$RUNNER_TEMP/asc/AuthKey_$KEY_ID.p8"
+          python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" install -q pyjwt cryptography requests
+          out=$("$RUNNER_TEMP/venv/bin/python" scripts/ci/mac_signing.py)
+          echo "$out" | while IFS= read -r line; do echo "::add-mask::${line#*=}"; done
+          echo "$out" >> "$GITHUB_ENV"
+          {
+            echo "APPLE_API_KEY=$KEY_PATH"
+            echo "APPLE_API_KEY_ID=$KEY_ID"
+            echo "APPLE_API_ISSUER=$ISSUER_ID"
+            echo "TREX_NOTARIZE=-c.mac.notarize=true"
+          } >> "$GITHUB_ENV"
+          echo "Developer ID signing and notarization enabled."
+
       - name: Build the installer
-        run: npm run dist:${{ matrix.platform }}
+        shell: bash
+        run: npm run dist:${{ matrix.platform }} -- $TREX_NOTARIZE
         env:
           # No local keychain auto-discovery; signing (if any) comes from the
           # CSC_LINK set by the previous step. Absent that, the build is unsigned.
