@@ -137,7 +137,7 @@ final class KeyboardViewController: UIInputViewController {
         let sel = NSSelectorFromString("openURL:options:completionHandler:")
         var responder: UIResponder? = self
         while let r = responder {
-            if r.responds(to: sel), let obj = r as? NSObject, NSStringFromClass(type(of: obj)).contains("Application") {
+            if r.responds(to: sel), let obj = r as? NSObject, NSStringFromClass(Swift.type(of: obj)).contains("Application") {
                 typealias OpenFn = @convention(c) (NSObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?) -> Void
                 let fn = unsafeBitCast(obj.method(for: sel), to: OpenFn.self)
                 fn(obj, sel, url as NSURL, NSDictionary(), nil)
