@@ -48,7 +48,7 @@ jobs:
           for screen in list editor setup account; do
             xcrun simctl terminate "$SIM" com.lumisha.trexpanda 2>/dev/null || true
             xcrun simctl launch "$SIM" com.lumisha.trexpanda -TrexDemoSnippets -TrexScreen "$screen"
-            sleep 6
+            sleep 8
             xcrun simctl io "$SIM" screenshot "$RUNNER_TEMP/shots/ios-$screen.png"
           done
           ls -l "$RUNNER_TEMP/shots"

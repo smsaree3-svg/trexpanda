@@ -72,11 +72,14 @@ struct ContentView: View {
                 // Store screenshots (simulator only): open a given screen at launch.
                 let args = ProcessInfo.processInfo.arguments
                 guard let i = args.firstIndex(of: "-TrexScreen"), i + 1 < args.count else { return }
-                switch args[i + 1] {
-                case "editor": editing = model.sortedSnippets.first { $0.attachment != nil }
-                case "setup": showKeyboardHelp = true
-                case "account": showAccount = true
-                default: break
+                let screen = args[i + 1]
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    switch screen {
+                    case "editor": editing = model.sortedSnippets.first { $0.attachment != nil }
+                    case "setup": showKeyboardHelp = true
+                    case "account": showAccount = true
+                    default: break
+                    }
                 }
             }
             .alert(item: $model.alert) { a in
