@@ -113,7 +113,7 @@ jobs:
 
       # Windows: Microsoft Artifact Signing (Lumisha LLC). Needs the secret
       # AZURE_CLIENT_SECRET (tenant and client IDs default to the Lumisha LLC
-      # app registration "trexpanda-github-signing with the "Artifact Signing Certificate Profile Signer" role
+      # app registration "trexpanda-github-signing") with the "Artifact Signing Certificate Profile Signer" role
       # on the signing account). Without them the build stays unsigned.
       - name: Configure Windows signing
         if: matrix.platform == 'win'
