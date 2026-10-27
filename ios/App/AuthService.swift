@@ -25,6 +25,8 @@ final class AuthService: NSObject, ObservableObject {
     private var webSession: ASWebAuthenticationSession?
     private var appleNonce: String?
     private var appleContinuation: CheckedContinuation<Void, Error>?
+    /// Set while asking Apple for an authorization code to revoke (account deletion).
+    private var appleCodeContinuation: CheckedContinuation<String, Error>?
 
     override init() {
         super.init()
@@ -81,6 +83,38 @@ final class AuthService: NSObject, ObservableObject {
             appleContinuation = cont
             controller.performRequests()
         }
+    }
+
+    /// True when this account signs in with Apple (so deleting it must revoke Apple's tokens).
+    func usesAppleSignIn() async -> Bool {
+        guard let token = await freshAccessToken() else { return false }
+        var req = URLRequest(url: AppConfig.authURL("user"))
+        req.setValue(AppConfig.anonKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        let providers = ((json["app_metadata"] as? [String: Any])?["providers"] as? [String]) ?? []
+        let identities = (json["identities"] as? [[String: Any]])?.compactMap { $0["provider"] as? String } ?? []
+        return (providers + identities).contains("apple")
+    }
+
+    /// Ask Apple (one Face ID / passcode confirmation) for a fresh authorization
+    /// code, which the server exchanges and revokes before the account is deleted.
+    func appleAuthorizationCode() async throws -> String {
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        let controller = ASAuthorizationController(authorizationRequests: [request])
+        controller.delegate = self
+        controller.presentationContextProvider = self
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
+            appleCodeContinuation = cont
+            controller.performRequests()
+        }
+    }
+
+    fileprivate func finishAppleCode(_ code: String?) {
+        if let code { appleCodeContinuation?.resume(returning: code) }
+        else { appleCodeContinuation?.resume(throwing: AuthError.failed("Apple didn't return an authorization code.")) }
+        appleCodeContinuation = nil
     }
 
     fileprivate func finishApple(idToken: String) async {
@@ -198,9 +232,11 @@ extension AuthService: ASWebAuthenticationPresentationContextProviding, ASAuthor
 extension AuthService: ASAuthorizationControllerDelegate {
     nonisolated func authorizationController(controller: ASAuthorizationController,
                                              didCompleteWithAuthorization authorization: ASAuthorization) {
-        let token = (authorization.credential as? ASAuthorizationAppleIDCredential)?
-            .identityToken.flatMap { String(data: $0, encoding: .utf8) }
+        let credential = authorization.credential as? ASAuthorizationAppleIDCredential
+        let token = credential?.identityToken.flatMap { String(data: $0, encoding: .utf8) }
+        let code = credential?.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
         Task { @MainActor in
+            if self.appleCodeContinuation != nil { self.finishAppleCode(code); return }
             if let token { await self.finishApple(idToken: token) }
             else {
                 self.appleContinuation?.resume(throwing: AuthError.failed("Apple didn't return an identity token."))
@@ -211,6 +247,11 @@ extension AuthService: ASAuthorizationControllerDelegate {
     nonisolated func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
         Task { @MainActor in
             let cancelled = (error as? ASAuthorizationError)?.code == .canceled
+            if self.appleCodeContinuation != nil {
+                self.appleCodeContinuation?.resume(throwing: cancelled ? AuthError.cancelled : error)
+                self.appleCodeContinuation = nil
+                return
+            }
             self.appleContinuation?.resume(throwing: cancelled ? AuthError.cancelled : error)
             self.appleContinuation = nil
         }

@@ -50,6 +50,13 @@ struct SupabaseAPI {
         return (json["message"] as? String) ?? "Your account could not be deleted. Please contact hello@trexpanda.com."
     }
 
+    /// Revoke the user's Sign in with Apple tokens (server exchanges the code with Apple).
+    func revokeApple(authorizationCode: String) async throws {
+        let (token, _) = try await credentials()
+        let body = try JSONSerialization.data(withJSONObject: ["authorizationCode": authorizationCode])
+        _ = try await send(AppConfig.functionURL("apple-revoke"), method: "POST", token: token, body: body)
+    }
+
     // MARK: Plumbing
 
     private func credentials() async throws -> (String, String) {

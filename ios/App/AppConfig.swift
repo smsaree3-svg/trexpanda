@@ -21,6 +21,7 @@ enum AppConfig {
 
     static func authURL(_ path: String) -> URL { URL(string: "\(supabaseURL)/auth/v1/\(path)")! }
     static func restURL(_ path: String) -> URL { URL(string: "\(supabaseURL)/rest/v1/\(path)")! }
+    static func functionURL(_ name: String) -> URL { URL(string: "\(supabaseURL)/functions/v1/\(name)")! }
 
     static let privacyURL = URL(string: "https://trexpanda.com/privacy.html")!
     static let deleteInfoURL = URL(string: "https://trexpanda.com/delete-account/")!

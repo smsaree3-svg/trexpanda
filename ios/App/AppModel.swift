@@ -155,6 +155,20 @@ final class AppModel: ObservableObject {
     /// Permanently deletes the account and its cloud data. Local snippets stay
     /// on this iPhone unless `alsoClearDevice` is true.
     func deleteAccount(alsoClearDevice: Bool) async {
+        // Accounts that use Sign in with Apple: revoke Apple's tokens first, as
+        // Apple requires. The user confirms once with Face ID / passcode.
+        if await auth.usesAppleSignIn() {
+            do {
+                let code = try await auth.appleAuthorizationCode()
+                try await api.revokeApple(authorizationCode: code)
+            } catch AuthError.cancelled {
+                alert = .init(title: "Account not deleted", message: "Confirm with Apple to delete your account.")
+                return
+            } catch {
+                // Still delete the account; the user can also remove Trexpanda in
+                // Settings > Apple Account > Sign in with Apple.
+            }
+        }
         do {
             if let refusal = try await api.deleteAccount() {
                 alert = .init(title: "Can't delete yet", message: refusal)
