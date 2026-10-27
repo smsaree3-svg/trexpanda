@@ -11,6 +11,9 @@ on:
       submit:
         description: 'Also submit the version for App Review (yes/no)'
         default: 'no'
+      replace:
+        description: 'Withdraw a waiting submission first so a newer build replaces it (yes/no)'
+        default: 'no'
 
 permissions:
   contents: read
@@ -24,6 +27,7 @@ jobs:
       REVIEW_PHONE: ${{ vars.APP_REVIEW_PHONE || '+1 620 422 4115' }}
       ONLY_STEPS: ${{ github.event.inputs.only }}
       SUBMIT: ${{ github.event.inputs.submit == 'yes' && '1' || '' }}
+      REPLACE: ${{ github.event.inputs.replace == 'yes' && '1' || '' }}
     steps:
       - uses: actions/checkout@v5
       - name: Update the listing

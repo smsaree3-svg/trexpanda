@@ -173,6 +173,23 @@ def main():
                  "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
     step("App Review contact and notes", review)
 
+    def withdraw():
+        """Pull a waiting submission back so a newer build can replace it."""
+        subs = call("GET", f"/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS&limit=20")["data"]
+        live = [x for x in subs if x["attributes"]["state"] in ("WAITING_FOR_REVIEW", "IN_REVIEW", "UNRESOLVED_ISSUES")]
+        for x in live:
+            call("PATCH", f"/reviewSubmissions/{x['id']}", {"data": {"type": "reviewSubmissions", "id": x["id"],
+                 "attributes": {"canceled": True}}})
+        for _ in range(40):  # wait until the version is editable again
+            st = call("GET", f"/appStoreVersions/{vid}")["data"]["attributes"]["appStoreState"]
+            if st not in ("WAITING_FOR_REVIEW", "IN_REVIEW"):
+                note(f"Version state now {st}")
+                return
+            time.sleep(15)
+        raise RuntimeError("submission is still being withdrawn; run again in a few minutes")
+    if os.environ.get("REPLACE") == "1":
+        step("Withdraw the waiting submission", withdraw)
+
     def build():
         for _ in range(60):  # wait for Apple to finish processing the newest upload
             b = call("GET", f"/builds?filter[app]={app_id}&filter[preReleaseVersion.version]={VERSION}"
