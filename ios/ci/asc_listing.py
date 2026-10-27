@@ -87,7 +87,9 @@ def main():
     app_id = app["id"]
     versions = call("GET", f"/apps/{app_id}/appStoreVersions?filter[platform]=IOS&limit=10")["data"]
     ver = next(v for v in versions if v["attributes"]["appStoreState"] in
-               ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED"))
+               ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED",
+                "WAITING_FOR_REVIEW", "IN_REVIEW", "INVALID_BINARY"))
+    note(f"Version {ver['attributes']['versionString']} is {ver['attributes']['appStoreState']}")
     vid = ver["id"]
 
     step("Version and copyright", lambda: call("PATCH", f"/appStoreVersions/{vid}", {"data": {
