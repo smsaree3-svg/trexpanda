@@ -29,6 +29,12 @@ struct ContentView: View {
                     ForEach(model.sortedSnippets) { s in
                         Button { editing = s } label: { SnippetRow(snippet: s) }
                             .foregroundStyle(.primary)
+                            .swipeActions(edge: .leading) {
+                                if s.attachment != nil {
+                                    Button { model.share(s) } label: { Label("Send file", systemImage: "square.and.arrow.up") }
+                                        .tint(.blue)
+                                }
+                            }
                     }
                     .onDelete { offsets in
                         let items = offsets.map { model.sortedSnippets[$0] }
@@ -60,6 +66,7 @@ struct ContentView: View {
                 SnippetEditView(snippet: s) { model.save($0) }
             }
             .sheet(isPresented: $showKeyboardHelp) { KeyboardSetupView() }
+            .sheet(item: $model.shareFile) { f in ShareSheet(items: [f.url]).ignoresSafeArea() }
             .sheet(isPresented: $showAccount) { AccountView() }
             .alert(item: $model.alert) { a in
                 Alert(title: Text(a.title), message: Text(a.message), dismissButton: .default(Text("OK")))
@@ -208,6 +215,15 @@ extension SnippetEditView {
         let mime = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
         snippet.attachment = SnippetAttachment(bytes: data, name: url.lastPathComponent, mime: mime)
     }
+}
+
+/// The iOS share sheet: pick WhatsApp (or Mail, Messages...) to send the real file.
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 struct KeyboardSetupView: View {

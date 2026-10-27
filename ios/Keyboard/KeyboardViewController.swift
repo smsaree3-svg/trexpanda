@@ -16,6 +16,8 @@ final class KeyboardViewController: UIInputViewController {
     private var symbols = false
     /// A short message shown in the suggestion bar (e.g. "attachment copied").
     private var notice: String?
+    /// Optional button shown with the notice (e.g. "Send PDF" for a file attachment).
+    private var noticeAction: (title: String, run: () -> Void)?
 
     private let suggestionBar = UIStackView()
     private let keyRows = UIStackView()
@@ -76,7 +78,7 @@ final class KeyboardViewController: UIInputViewController {
     // MARK: Typing
 
     private func type(_ text: String) {
-        notice = nil
+        notice = nil; noticeAction = nil
         textDocumentProxy.insertText(text)
         if shifted && !symbols { shifted = false; rebuildKeys() }
         expandIfTriggered()
@@ -95,14 +97,16 @@ final class KeyboardViewController: UIInputViewController {
         textDocumentProxy.insertText(action.replacement)
         if action.caretBack > 0 { textDocumentProxy.adjustTextPosition(byCharacterOffset: -action.caretBack) }
         UIDevice.current.playInputClick()
-        if let att = action.attachment { copyAttachment(att) }
+        if let att = action.attachment { copyAttachment(att, trigger: action.trigger) }
     }
 
-    /// iOS keyboards can only type text, so the snippet's image/file goes on the
-    /// clipboard right after its text; one tap on Paste attaches it.
-    private func copyAttachment(_ att: SnippetAttachment) {
+    /// iOS keyboards can only type text. Images go on the clipboard (WhatsApp and
+    /// most apps offer Paste for images). Other files (PDF, Excel...) can't be
+    /// pasted into chat apps on iPhone, so the bar offers "Send <file>", which
+    /// opens Trexpanda's share sheet with the real file.
+    private func copyAttachment(_ att: SnippetAttachment, trigger: String) {
         guard hasFullAccess else {
-            notice = "Allow Full Access to paste this snippet's attachment"
+            notice = "Allow Full Access to send this snippet's attachment"
             return
         }
         guard let data = att.bytes else { notice = "Couldn't read this snippet's attachment"; return }
@@ -110,14 +114,44 @@ final class KeyboardViewController: UIInputViewController {
         let type = (att.mime.isEmpty ? nil : UTType(mimeType: att.mime))
             ?? (ext.isEmpty ? nil : UTType(filenameExtension: ext))
             ?? (att.isImage ? UTType.png : UTType.data)
-        let provider = NSItemProvider(item: data as NSData, typeIdentifier: type.identifier)
-        provider.suggestedName = att.name
-        UIPasteboard.general.setItemProviders([provider], localOnly: false, expirationDate: nil)
-        notice = "📎 \(att.name) copied. Tap the text box and choose Paste"
+        let shareURL = URL(string: "trexpanda://share?trigger=" +
+            (trigger.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""))
+        if att.isImage, let image = UIImage(data: data) {
+            UIPasteboard.general.image = image
+            notice = "📎 Image copied. Tap the text box and choose Paste"
+        } else {
+            let provider = NSItemProvider(item: data as NSData, typeIdentifier: type.identifier)
+            provider.suggestedName = att.name
+            UIPasteboard.general.setItemProviders([provider], localOnly: false, expirationDate: nil)
+            notice = "📎 \(att.name)"
+        }
+        if let shareURL {
+            let kind = att.isImage ? "image" : (ext.isEmpty ? "file" : ext.uppercased())
+            noticeAction = ("Send \(kind)", { [weak self] in self?.openContainingApp(shareURL) })
+        }
+    }
+
+    /// Open Trexpanda itself. Keyboards have no public API for this; walking the
+    /// responder chain to the application object is the standard approach.
+    private func openContainingApp(_ url: URL) {
+        let sel = NSSelectorFromString("openURL:options:completionHandler:")
+        var responder: UIResponder? = self
+        while let r = responder {
+            if r.responds(to: sel), let obj = r as? NSObject, NSStringFromClass(type(of: obj)).contains("Application") {
+                typealias OpenFn = @convention(c) (NSObject, Selector, NSURL, NSDictionary, (@convention(block) (Bool) -> Void)?) -> Void
+                let fn = unsafeBitCast(obj.method(for: sel), to: OpenFn.self)
+                fn(obj, sel, url as NSURL, NSDictionary(), nil)
+                return
+            }
+            responder = r.next
+        }
+        notice = "Open the Trexpanda app to send this file"
+        noticeAction = nil
+        refreshSuggestions()
     }
 
     private func backspace() {
-        notice = nil
+        notice = nil; noticeAction = nil
         textDocumentProxy.deleteBackward()
         refreshSuggestions()
     }
@@ -132,6 +166,18 @@ final class KeyboardViewController: UIInputViewController {
         }
         if let notice {
             suggestionBar.addArrangedSubview(hint(notice))
+            if let action = noticeAction {
+                let b = UIButton(type: .system)
+                b.setTitle(action.title, for: .normal)
+                b.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+                b.backgroundColor = UIColor.systemBlue
+                b.setTitleColor(.white, for: .normal)
+                b.layer.cornerRadius = 8
+                b.contentEdgeInsets = UIEdgeInsets(top: 4, left: 12, bottom: 4, right: 12)
+                b.setContentCompressionResistancePriority(.required, for: .horizontal)
+                b.addAction(UIAction { _ in action.run() }, for: .touchUpInside)
+                suggestionBar.addArrangedSubview(b)
+            }
             return
         }
         let before = textDocumentProxy.documentContextBeforeInput ?? ""

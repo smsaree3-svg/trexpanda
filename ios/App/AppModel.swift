@@ -32,6 +32,37 @@ final class AppModel: ObservableObject {
 
     var sortedSnippets: [Snippet] { snippets.sorted { $0.trigger.lowercased() < $1.trigger.lowercased() } }
 
+    // MARK: Sharing attachments
+
+    /// A snippet's file waiting to be shown in the share sheet.
+    @Published var shareFile: ShareFile?
+
+    struct ShareFile: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+
+    /// Handle trexpanda://share?trigger=<trigger> sent by the keyboard.
+    func openShareLink(_ url: URL) {
+        guard url.scheme == "trexpanda", url.host == "share",
+              let trigger = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "trigger" })?.value else { return }
+        let lower = trigger.lowercased()
+        guard let s = snippets.last(where: { $0.trigger.lowercased() == lower && !$0.isDeleted && $0.attachment != nil })
+        else { return }
+        share(s)
+    }
+
+    /// Write the attachment to a temporary file with its real name and share it.
+    func share(_ snippet: Snippet) {
+        guard let att = snippet.attachment, let data = att.bytes else { return }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("share-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent(att.name)
+        do { try data.write(to: file) } catch { return }
+        shareFile = ShareFile(url: file)
+    }
+
     // MARK: Editing
 
     func save(_ edited: Snippet) {
