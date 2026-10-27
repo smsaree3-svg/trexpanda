@@ -18,7 +18,7 @@ jobs:
     env:
       KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
       ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-      REVIEW_PHONE: ${{ vars.APP_REVIEW_PHONE }}
+      REVIEW_PHONE: ${{ vars.APP_REVIEW_PHONE || '+1 620 422 4115' }}
       ONLY_STEPS: ${{ github.event.inputs.only }}
     steps:
       - uses: actions/checkout@v5

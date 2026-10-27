@@ -71,9 +71,15 @@ def patch_dropping_unknown(path, typ, oid, attrs):
             return call("PATCH", path, {"data": {"type": typ, "id": oid, "attributes": attrs}})
         except RuntimeError as e:
             m = re.search(r"/data/attributes/(\w+)", str(e))
-            if not m or m.group(1) not in attrs:
+            if not m:
                 raise
-            attrs.pop(m.group(1))
+            name = m.group(1)
+            if "ATTRIBUTE.REQUIRED" in str(e) and name not in attrs:
+                attrs[name] = False  # a newer yes/no question: Trexpanda answers "no"
+            elif name in attrs:
+                attrs.pop(name)
+            else:
+                raise
 
 
 def main():
