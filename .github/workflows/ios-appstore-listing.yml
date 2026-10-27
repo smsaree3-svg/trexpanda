@@ -8,6 +8,9 @@ on:
       only:
         description: 'Only these steps (comma-separated words, e.g. "age,review"); empty = all'
         default: ''
+      submit:
+        description: 'Also submit the version for App Review (yes/no)'
+        default: 'no'
 
 permissions:
   contents: read
@@ -20,6 +23,7 @@ jobs:
       ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
       REVIEW_PHONE: ${{ vars.APP_REVIEW_PHONE || '+1 620 422 4115' }}
       ONLY_STEPS: ${{ github.event.inputs.only }}
+      SUBMIT: ${{ github.event.inputs.submit == 'yes' && '1' || '' }}
     steps:
       - uses: actions/checkout@v5
       - name: Update the listing

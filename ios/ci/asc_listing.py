@@ -210,6 +210,26 @@ def main():
                  "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
     step("iPhone 6.9-inch screenshots", screenshots)
 
+    step("Content rights (no third-party content)", lambda: call("PATCH", f"/apps/{app_id}", {"data": {
+        "type": "apps", "id": app_id, "attributes": {"contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT"}}}))
+
+    def submit():
+        subs = call("GET", f"/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS&limit=20")["data"]
+        sub = next((x for x in subs if x["attributes"]["state"] in ("READY_FOR_REVIEW",)), None)
+        if not sub:
+            sub = call("POST", "/reviewSubmissions", {"data": {"type": "reviewSubmissions",
+                  "attributes": {"platform": "IOS"},
+                  "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+        items = call("GET", f"/reviewSubmissions/{sub['id']}/items")["data"]
+        if not items:
+            call("POST", "/reviewSubmissionItems", {"data": {"type": "reviewSubmissionItems", "relationships": {
+                "reviewSubmission": {"data": {"type": "reviewSubmissions", "id": sub["id"]}},
+                "appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
+        call("PATCH", f"/reviewSubmissions/{sub['id']}", {"data": {"type": "reviewSubmissions", "id": sub["id"],
+             "attributes": {"submitted": True}}})
+    if os.environ.get("SUBMIT") == "1":
+        step("Submit for App Review", submit)
+
 
 if __name__ == "__main__":
     main()
