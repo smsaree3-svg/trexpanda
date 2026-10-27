@@ -20,58 +20,71 @@ final class KeyboardViewController: UIInputViewController {
     private var noticeAction: (title: String, run: () -> Void)?
 
     private let suggestionBar = UIStackView()
-    private let keyRows = UIStackView()
+    private let keysView = UIView()
     private var heightConstraint: NSLayoutConstraint?
 
+    // Same layouts as the iPhone keyboard (letters, 123 and #+= pages).
     private let letterRows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"].map { $0.map(String.init) }
-    private let symbolRows: [[String]] = [
+    private let numberRows: [[String]] = [
         "1234567890".map(String.init),
         ["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""],
-        [".", ",", "?", "!", "'", "#", "%"],
+        [".", ",", "?", "!", "'"],
+    ]
+    private let moreSymbolRows: [[String]] = [
+        ["[", "]", "{", "}", "#", "%", "^", "*", "+", "="],
+        ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"],
+        [".", ",", "?", "!", "'"],
     ]
 
     // MARK: Lifecycle
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor(named: "KeyboardBackground") ?? .systemGray5
+        // Clear, so the system's own keyboard backdrop shows (same as Apple's keyboard).
+        view.backgroundColor = .clear
 
         suggestionBar.axis = .horizontal
         suggestionBar.spacing = 6
         suggestionBar.distribution = .fillProportionally
-        keyRows.axis = .vertical
-        keyRows.spacing = 8
-        keyRows.distribution = .fillEqually
-
-        let root = UIStackView(arrangedSubviews: [suggestionBar, keyRows])
-        root.axis = .vertical
-        root.spacing = 6
-        root.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(root)
+        suggestionBar.translatesAutoresizingMaskIntoConstraints = false
+        keysView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(suggestionBar)
+        view.addSubview(keysView)
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 3),
-            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -3),
-            root.topAnchor.constraint(equalTo: view.topAnchor, constant: 6),
-            root.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4),
-            suggestionBar.heightAnchor.constraint(equalToConstant: 36),
+            suggestionBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 6),
+            suggestionBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -6),
+            suggestionBar.topAnchor.constraint(equalTo: view.topAnchor, constant: 4),
+            suggestionBar.heightAnchor.constraint(equalToConstant: 38),
+            keysView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            keysView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            keysView.topAnchor.constraint(equalTo: suggestionBar.bottomAnchor, constant: 2),
+            keysView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
         ])
-        let h = view.heightAnchor.constraint(equalToConstant: 266)
+        let h = view.heightAnchor.constraint(equalToConstant: 262)
         h.priority = .defaultHigh
         h.isActive = true
         heightConstraint = h
         rebuildKeys()
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        layoutKeys()
+    }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Reload every time the keyboard appears, so edits in the app apply at once.
         engine.setSnippets(SharedStore.loadSnippets().filter { $0.enabled && !$0.isDeleted })
+        symbols = false; moreSymbols = false; capsLock = false
+        shifted = shouldAutoCapitalize()
         rebuildKeys()
         refreshSuggestions()
     }
 
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        updateAutoShift()
         refreshSuggestions()
     }
 
@@ -80,8 +93,10 @@ final class KeyboardViewController: UIInputViewController {
     private func type(_ text: String) {
         notice = nil; noticeAction = nil
         textDocumentProxy.insertText(text)
-        if shifted && !symbols { shifted = false; rebuildKeys() }
         expandIfTriggered()
+        // Like Apple's keyboard: back to letters after a space or a quote on the 123 page.
+        if symbols && (text == " " || text == "'") { symbols = false; moreSymbols = false; rebuildKeys() }
+        updateAutoShift()
         refreshSuggestions()
     }
 
@@ -153,6 +168,7 @@ final class KeyboardViewController: UIInputViewController {
     private func backspace() {
         notice = nil; noticeAction = nil
         textDocumentProxy.deleteBackward()
+        updateAutoShift()
         refreshSuggestions()
     }
 
@@ -220,85 +236,220 @@ final class KeyboardViewController: UIInputViewController {
         return l
     }
 
-    // MARK: Keys
+    // MARK: Keys — same geometry, colours and behaviour as the iPhone keyboard
 
-    /// One key width as a fraction of the row: ten letter keys plus nine 5-pt gaps fill a row.
-    private let unit: CGFloat = 0.092
+    private enum KeyKind { case char(String), shift, delete, mode, globe, space, ret }
+
+    /// A key whose touch area also covers half the gap around it, like Apple's keys,
+    /// so taps between keys still land.
+    private final class KeyButton: UIButton {
+        var kind: KeyKind = .space
+        var special = false
+        override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+            bounds.insetBy(dx: -3, dy: -6).contains(point)
+        }
+    }
+
+    private var rowsOfKeys: [[KeyButton]] = []
+    private var capsLock = false
+    private var moreSymbols = false
+    private var lastShiftTap = Date.distantPast
+    private var lastSpaceTap = Date.distantPast
+    private var deleteTimer: Timer?
+
+    private static let charColor = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.42, alpha: 1) : .white }
+    private static let specialColor = UIColor {
+        $0.userInterfaceStyle == .dark ? UIColor(white: 0.27, alpha: 1) : UIColor(red: 0.67, green: 0.69, blue: 0.73, alpha: 1)
+    }
 
     private func rebuildKeys() {
-        keyRows.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let rows = symbols ? symbolRows : letterRows
+        keysView.subviews.forEach { $0.removeFromSuperview() }
+        let upper = (shifted || capsLock) && !symbols
+        let rows = !symbols ? letterRows : (moreSymbols ? moreSymbolRows : numberRows)
+        var grid: [[KeyButton]] = []
         for (i, chars) in rows.enumerated() {
-            var keys: [(UIButton, CGFloat)] = []
+            var row: [KeyButton] = []
             if i == 2 {
-                keys.append((specialKey(symbols ? "#+=" : (shifted ? "⇧" : "⇪")) { [weak self] in
-                    guard let self, !self.symbols else { return }
-                    self.shifted.toggle(); self.rebuildKeys()
-                }, 1.4))
+                if symbols {
+                    row.append(makeKey(.shift, title: moreSymbols ? "123" : "#+=", special: true))
+                } else {
+                    let icon = capsLock ? "capslock.fill" : (shifted ? "shift.fill" : "shift")
+                    row.append(makeKey(.shift, image: icon, special: true))
+                }
             }
-            for k in chars {
-                let label = (shifted && !symbols) ? k.uppercased() : k
-                keys.append((charKey(label), 1))
-            }
-            if i == 2 {
-                keys.append((specialKey("⌫") { [weak self] in self?.backspace() }, 1.4))
-            }
-            keyRows.addArrangedSubview(row(keys))
+            for c in chars { row.append(makeKey(.char(c), title: upper ? c.uppercased() : c, special: false)) }
+            if i == 2 { row.append(makeKey(.delete, image: "delete.left", special: true)) }
+            grid.append(row)
         }
-        var bottom: [(UIButton, CGFloat)] = []
-        bottom.append((specialKey(symbols ? "ABC" : "123") { [weak self] in
-            guard let self else { return }
-            self.symbols.toggle(); self.rebuildKeys()
-        }, 1.3))
+        var bottom = [makeKey(.mode, title: symbols ? "ABC" : "123", special: true)]
         if needsInputModeSwitchKey {
-            let globe = specialKey("🌐") {}
-            globe.accessibilityLabel = "Next keyboard"
+            let globe = makeKey(.globe, image: "globe", special: true)
             globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
-            bottom.append((globe, 1.1))
+            bottom.append(globe)
         }
-        bottom.append((specialKey("space") { [weak self] in self?.type(" ") }, needsInputModeSwitchKey ? 4.6 : 5.7))
-        bottom.append((specialKey("return") { [weak self] in self?.type("\n") }, 2))
-        keyRows.addArrangedSubview(row(bottom))
+        bottom.append(makeKey(.space, title: "space", special: false))
+        bottom.append(makeKey(.ret, title: "return", special: true))
+        grid.append(bottom)
+        rowsOfKeys = grid
+        layoutKeys()
     }
 
-    /// A centred row: each key's width is a fixed share of the row's width.
-    private func row(_ keys: [(UIButton, CGFloat)]) -> UIStackView {
-        let r = UIStackView()
-        r.axis = .horizontal
-        r.spacing = 5
-        r.distribution = .fill
-        let lead = UIView(), trail = UIView()
-        r.addArrangedSubview(lead)
-        keys.forEach { r.addArrangedSubview($0.0) }
-        r.addArrangedSubview(trail)
-        for (b, w) in keys {
-            b.widthAnchor.constraint(equalTo: r.widthAnchor, multiplier: unit * w).isActive = true
-        }
-        trail.widthAnchor.constraint(equalTo: lead.widthAnchor).isActive = true
-        return r
-    }
-
-    private func charKey(_ label: String) -> UIButton {
-        keyButton(label, fill: .systemBackground) { [weak self] in self?.type(label) }
-    }
-
-    private func specialKey(_ label: String, _ action: @escaping () -> Void) -> UIButton {
-        keyButton(label, fill: .systemGray3, action)
-    }
-
-    private func keyButton(_ label: String, fill: UIColor, _ action: @escaping () -> Void) -> UIButton {
-        let b = UIButton(type: .system)
-        b.setTitle(label, for: .normal)
-        b.setTitleColor(.label, for: .normal)
-        b.titleLabel?.font = .systemFont(ofSize: label.count > 1 ? 15 : 22)
-        b.backgroundColor = fill
-        b.layer.cornerRadius = 5
+    private func makeKey(_ kind: KeyKind, title: String? = nil, image: String? = nil, special: Bool) -> KeyButton {
+        let b = KeyButton(type: .custom)
+        b.kind = kind
+        b.special = special
+        b.backgroundColor = special ? Self.specialColor : Self.charColor
+        b.layer.cornerRadius = 8.5
+        b.layer.cornerCurve = .continuous
         b.layer.shadowColor = UIColor.black.cgColor
-        b.layer.shadowOpacity = 0.25
+        b.layer.shadowOpacity = 0.3
         b.layer.shadowOffset = CGSize(width: 0, height: 1)
         b.layer.shadowRadius = 0
-        b.accessibilityLabel = label == "⌫" ? "Delete" : (label == "⇧" || label == "⇪" ? "Shift" : label)
-        b.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        b.setTitleColor(.label, for: .normal)
+        b.tintColor = .label
+        if let title {
+            b.setTitle(title, for: .normal)
+            let isLetter: Bool = { if case .char = kind { return true }; return false }()
+            b.titleLabel?.font = isLetter ? .systemFont(ofSize: 23) : .systemFont(ofSize: 16)
+        }
+        if let image {
+            b.setImage(UIImage(systemName: image, withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .regular)), for: .normal)
+        }
+        b.accessibilityLabel = {
+            switch kind {
+            case .char(let c): return c
+            case .shift: return symbols ? (moreSymbols ? "Numbers" : "More symbols") : "Shift"
+            case .delete: return "Delete"
+            case .mode: return symbols ? "Letters" : "Numbers"
+            case .globe: return "Next keyboard"
+            case .space: return "Space"
+            case .ret: return "Return"
+            }
+        }()
+        if case .globe = kind {} else {
+            b.addTarget(self, action: #selector(keyDown(_:)), for: .touchDown)
+            b.addTarget(self, action: #selector(keyUp(_:)), for: .touchUpInside)
+            b.addTarget(self, action: #selector(keyCancel(_:)), for: [.touchUpOutside, .touchCancel, .touchDragExit])
+        }
+        keysView.addSubview(b)
         return b
+    }
+
+    /// Lays the keys out like the iPhone keyboard: 3-pt side margins, 6-pt gaps,
+    /// ten equal keys on the top row, the second row inset by half a key, shift and
+    /// delete at the edges of the third row, and 123 / space / return at the bottom.
+    private func layoutKeys() {
+        let W = keysView.bounds.width, H = keysView.bounds.height
+        guard W > 0, H > 0, rowsOfKeys.count == 4 else { return }
+        let margin: CGFloat = 3, gap: CGFloat = 6, rowGap: CGFloat = 11, top: CGFloat = 6, bottomPad: CGFloat = 3
+        let keyH = floor((H - top - bottomPad - 3 * rowGap) / 4)
+        let u = (W - 2 * margin - 9 * gap) / 10
+        func y(_ r: Int) -> CGFloat { top + CGFloat(r) * (keyH + rowGap) }
+        func place(_ keys: [KeyButton], width: CGFloat, row: Int) {
+            let total = CGFloat(keys.count) * width + CGFloat(max(keys.count - 1, 0)) * gap
+            var x = (W - total) / 2
+            for k in keys { k.frame = CGRect(x: x, y: y(row), width: width, height: keyH); x += width + gap }
+        }
+        place(rowsOfKeys[0], width: u, row: 0)
+        place(rowsOfKeys[1], width: u, row: 1)
+
+        let third = rowsOfKeys[2]
+        let sideW = round(u * 1.3 + 2)
+        third.first?.frame = CGRect(x: margin, y: y(2), width: sideW, height: keyH)
+        third.last?.frame = CGRect(x: W - margin - sideW, y: y(2), width: sideW, height: keyH)
+        let middle = Array(third.dropFirst().dropLast())
+        let room = W - 2 * (margin + sideW + gap * 2)
+        let midW = symbols ? min(u * 1.45, (room - CGFloat(middle.count - 1) * gap) / CGFloat(middle.count)) : u
+        place(middle, width: midW, row: 2)
+
+        let bottom = rowsOfKeys[3]
+        let modeW = round(u * 1.3 + 2), globeW = round(u * 1.1), retW = round(u * 2.3 + gap)
+        let fixed = bottom.reduce(CGFloat(0)) { sum, k in
+            switch k.kind { case .mode: return sum + modeW; case .globe: return sum + globeW; case .ret: return sum + retW; default: return sum }
+        }
+        let spaceW = W - 2 * margin - fixed - CGFloat(bottom.count - 1) * gap
+        var x = margin
+        for k in bottom {
+            let w: CGFloat
+            switch k.kind { case .mode: w = modeW; case .globe: w = globeW; case .ret: w = retW; default: w = spaceW }
+            k.frame = CGRect(x: x, y: y(3), width: w, height: keyH)
+            x += w + gap
+        }
+    }
+
+    @objc private func keyDown(_ b: KeyButton) {
+        b.backgroundColor = b.special ? Self.charColor : Self.specialColor
+        UIDevice.current.playInputClick()
+        if case .delete = b.kind {
+            backspace()
+            deleteTimer?.invalidate()
+            deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in
+                self?.deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in self?.backspace() }
+            }
+        }
+    }
+
+    @objc private func keyCancel(_ b: KeyButton) {
+        b.backgroundColor = b.special ? Self.specialColor : Self.charColor
+        deleteTimer?.invalidate(); deleteTimer = nil
+    }
+
+    @objc private func keyUp(_ b: KeyButton) {
+        keyCancel(b)
+        switch b.kind {
+        case .char(let c):
+            type((shifted || capsLock) && !symbols ? c.uppercased() : c)
+        case .shift:
+            if symbols { moreSymbols.toggle() }
+            else {
+                let now = Date()
+                if capsLock { capsLock = false; shifted = false }
+                else if now.timeIntervalSince(lastShiftTap) < 0.35 { capsLock = true; shifted = true }
+                else { shifted.toggle() }
+                lastShiftTap = now
+            }
+            rebuildKeys()
+        case .delete:
+            break // handled on touch down (with hold-to-repeat)
+        case .mode:
+            symbols.toggle(); moreSymbols = false
+            if !symbols { shifted = shouldAutoCapitalize() }
+            rebuildKeys()
+        case .space:
+            let now = Date()
+            let before = textDocumentProxy.documentContextBeforeInput ?? ""
+            if now.timeIntervalSince(lastSpaceTap) < 0.35, before.hasSuffix(" "),
+               let prev = before.dropLast().last, prev.isLetter || prev.isNumber {
+                // Double space types ". " like the iPhone keyboard.
+                textDocumentProxy.deleteBackward()
+                type(". ")
+                lastSpaceTap = .distantPast
+            } else {
+                type(" ")
+                lastSpaceTap = now
+            }
+        case .ret:
+            type("\n")
+        case .globe:
+            break
+        }
+    }
+
+    /// Capital letter at the start of a sentence, as the text field asks.
+    private func shouldAutoCapitalize() -> Bool {
+        let proxy = textDocumentProxy
+        let mode = proxy.autocapitalizationType ?? .sentences
+        if mode == .none { return false }
+        if mode == .allCharacters { return true }
+        let before = proxy.documentContextBeforeInput ?? ""
+        if before.trimmingCharacters(in: .whitespaces).isEmpty { return true }
+        if mode == .words { return before.hasSuffix(" ") || before.hasSuffix("\n") }
+        return [". ", "! ", "? ", "\n"].contains { before.hasSuffix($0) }
+    }
+
+    private func updateAutoShift() {
+        guard !capsLock, !symbols else { return }
+        let want = shouldAutoCapitalize()
+        if want != shifted { shifted = want; rebuildKeys() }
     }
 }
