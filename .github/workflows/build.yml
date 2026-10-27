@@ -113,7 +113,9 @@ jobs:
 
       - name: Build the installer
         shell: bash
-        run: npm run dist:${{ matrix.platform }} -- $TREX_NOTARIZE
+        run: |
+          set -o pipefail
+          npm run dist:${{ matrix.platform }} -- $TREX_NOTARIZE 2>&1 | tee "$RUNNER_TEMP/build.log"
         env:
           # No local keychain auto-discovery; signing (if any) comes from the
           # CSC_LINK set by the previous step. Absent that, the build is unsigned.
@@ -124,6 +126,16 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # Lets electron-builder attach update metadata to the GitHub Release.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report build errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/build.log"
+          [ -f "$log" ] || exit 0
+          grep -iE "⨯|error|failed|notar|codesign|signing|identity|certificate|Invalid|rejected" "$log" | grep -v "^\s*at " | tail -40 > "$RUNNER_TEMP/err.txt" || true
+          msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/err.txt" | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Build failure::${msg}"
 
       - name: Upload installers as artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
