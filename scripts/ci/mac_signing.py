@@ -36,5 +36,24 @@ base = ["openssl", "pkcs12", "-export", "-inkey", key, "-in", pem, "-out", p12, 
 if subprocess.run(base[:3] + ["-legacy"] + base[3:], capture_output=True).returncode != 0:
     subprocess.run(base, check=True)
 key.unlink()
-print("CSC_LINK=" + base64.b64encode(p12.read_bytes()).decode())
-print("CSC_KEY_PASSWORD=" + pw)
+
+# Import into a dedicated keychain (electron-builder's own temporary keychain
+# fails on current macOS runners) and let electron-builder find it by name.
+kc = str(TMP / "devid.keychain-db")
+for cmd in (["create-keychain", "-p", pw, kc], ["set-keychain-settings", "-lut", "21600", kc],
+            ["unlock-keychain", "-p", pw, kc],
+            ["import", str(p12), "-P", pw, "-A", "-t", "cert", "-f", "pkcs12", "-k", kc],
+            ["set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", pw, kc]):
+    res = subprocess.run(["security", *cmd], capture_output=True, text=True)
+    if res.returncode != 0:
+        sys.exit(f"::error::security {cmd[0]} failed: {res.stderr.strip()[:300]}")
+existing = subprocess.run(["security", "list-keychains", "-d", "user"], capture_output=True, text=True).stdout
+subprocess.run(["security", "list-keychains", "-d", "user", "-s", kc,
+                *[k.strip().strip('"') for k in existing.split()]], check=True)
+p12.unlink()
+ident = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning", kc], capture_output=True, text=True).stdout
+name = next((l.split('"')[1] for l in ident.splitlines() if "Developer ID Application" in l), None)
+if not name:
+    sys.exit("::error::Developer ID identity not found after import: " + " ".join(ident.split())[:300])
+print("CSC_NAME=" + name.replace("Developer ID Application: ", ""))
+print("CSC_KEYCHAIN=" + kc)

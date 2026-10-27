@@ -101,8 +101,8 @@ jobs:
           export KEY_PATH="$RUNNER_TEMP/asc/AuthKey_$KEY_ID.p8"
           python3 -m venv "$RUNNER_TEMP/venv" && "$RUNNER_TEMP/venv/bin/pip" install -q pyjwt cryptography requests
           out=$("$RUNNER_TEMP/venv/bin/python" scripts/ci/mac_signing.py)
-          echo "$out" | while IFS= read -r line; do echo "::add-mask::${line#*=}"; done
           echo "$out" >> "$GITHUB_ENV"
+          echo "$out" | grep CSC_NAME
           {
             echo "APPLE_API_KEY=$KEY_PATH"
             echo "APPLE_API_KEY_ID=$KEY_ID"
