@@ -1,0 +1,62 @@
+name: iOS store screenshots
+
+# Runs the real iPhone app in the simulator (6.9" display) with sample snippets
+# and captures App Store screenshots into a private draft release.
+on:
+  push:
+    branches: [ios-shots]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v5
+      - name: Xcode 26 and a 6.9-inch simulator
+        shell: bash
+        run: |
+          x=$(ls -d /Applications/Xcode_26*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$x/Contents/Developer"
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)["devices"]
+          c=[(rt,x) for rt,l in d.items() if "iOS" in rt for x in l if "Pro Max" in x["name"]]
+          c.sort(key=lambda t:(t[0],t[1]["name"]))
+          print(c[-1][1]["udid"])')
+          echo "SIM=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl status_bar "$udid" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          xcrun simctl ui "$udid" appearance dark
+      - name: Build for the simulator
+        run: |
+          brew install xcodegen && xcodegen generate
+          xcodebuild build -project Trexpanda.xcodeproj -scheme Trexpanda -sdk iphonesimulator \
+            -destination "id=$SIM" -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO -quiet
+      - name: Capture screens
+        shell: bash
+        run: |
+          app=$(ls -d "$RUNNER_TEMP"/dd/Build/Products/Debug-iphonesimulator/Trexpanda.app)
+          xcrun simctl install "$SIM" "$app"
+          mkdir -p "$RUNNER_TEMP/shots"
+          for screen in list editor setup account; do
+            xcrun simctl terminate "$SIM" com.lumisha.trexpanda 2>/dev/null || true
+            xcrun simctl launch "$SIM" com.lumisha.trexpanda -TrexDemoSnippets -TrexScreen "$screen"
+            sleep 6
+            xcrun simctl io "$SIM" screenshot "$RUNNER_TEMP/shots/ios-$screen.png"
+          done
+          ls -l "$RUNNER_TEMP/shots"
+      - name: Publish to a private draft release
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ios-store-screenshots --yes 2>/dev/null || true
+          gh release create ios-store-screenshots "$RUNNER_TEMP"/shots/*.png --draft --target "$GITHUB_SHA" \
+            --title "iOS store screenshots" --notes "Simulator captures for the App Store listing. Private draft."

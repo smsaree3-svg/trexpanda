@@ -24,6 +24,11 @@ final class AppModel: ObservableObject {
         // Ids are compared as strings with the server's lower-case uuids.
         snippets = SharedStore.loadSnippets().map { var s = $0; s.id = s.id.lowercased(); return s }
         tombstones = SharedStore.loadTombstones().map { Tombstone(id: $0.id.lowercased(), deletedAt: $0.deletedAt) }
+        // Store screenshots (simulator only): show sample snippets, save nothing.
+        if ProcessInfo.processInfo.arguments.contains("-TrexDemoSnippets") {
+            snippets = Self.demoSnippets
+            return
+        }
         if snippets.isEmpty && tombstones.isEmpty && !auth.isSignedIn {
             snippets = Self.starterSnippets
             persist()
@@ -189,6 +194,18 @@ final class AppModel: ObservableObject {
             alert = .init(title: "Couldn't delete your account", message: "Check your connection and try again.")
         }
     }
+
+    private static let demoSnippets: [Snippet] = [
+        Snippet(trigger: ";addr", replacement: "221 Market Street, Suite 400, San Francisco, CA 94105", label: "Office address"),
+        Snippet(trigger: ";email", replacement: "hello@yourcompany.com", label: "Work email"),
+        Snippet(trigger: ";ty", replacement: "Thank you so much! Let me know if there's anything else I can help with.", label: "Thank you"),
+        Snippet(trigger: ";meet", replacement: "Here's my meeting link: https://meet.example.com/you", label: "Meeting link"),
+        Snippet(trigger: ";sig", replacement: "Best regards,\nAlex Morgan\nCustomer Success", label: "Signature"),
+        Snippet(trigger: ";date", replacement: "{date}", label: "Today's date"),
+        Snippet(trigger: ";price", replacement: "Here's our latest price list:", label: "Price list",
+                attachment: SnippetAttachment(bytes: Data(count: 64), name: "Price list.pdf", mime: "application/pdf")),
+        Snippet(trigger: ";track", replacement: "You can track your order here: https://track.example.com", label: "Order tracking"),
+    ]
 
     private static let starterSnippets: [Snippet] = [
         Snippet(trigger: ";date", replacement: "{date}", label: "Today's date"),

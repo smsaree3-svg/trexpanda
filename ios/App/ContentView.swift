@@ -68,6 +68,17 @@ struct ContentView: View {
             .sheet(isPresented: $showKeyboardHelp) { KeyboardSetupView() }
             .sheet(item: $model.shareFile) { f in ShareSheet(items: [f.url]).ignoresSafeArea() }
             .sheet(isPresented: $showAccount) { AccountView() }
+            .onAppear {
+                // Store screenshots (simulator only): open a given screen at launch.
+                let args = ProcessInfo.processInfo.arguments
+                guard let i = args.firstIndex(of: "-TrexScreen"), i + 1 < args.count else { return }
+                switch args[i + 1] {
+                case "editor": editing = model.sortedSnippets.first { $0.attachment != nil }
+                case "setup": showKeyboardHelp = true
+                case "account": showAccount = true
+                default: break
+                }
+            }
             .alert(item: $model.alert) { a in
                 Alert(title: Text(a.title), message: Text(a.message), dismissButton: .default(Text("OK")))
             }
