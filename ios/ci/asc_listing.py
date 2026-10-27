@@ -186,18 +186,18 @@ def main():
         note(f"Attached build {b['attributes']['version']}")
     step("Attach build", build)
 
-    def screenshots():
+    def upload_set(display_type, pattern):
         lid = loc_id.get("id") or localization()
         sets = call("GET", f"/appStoreVersionLocalizations/{lid}/appScreenshotSets")["data"]
-        ss = next((s for s in sets if s["attributes"]["screenshotDisplayType"] == "APP_IPHONE_67"), None)
+        ss = next((s for s in sets if s["attributes"]["screenshotDisplayType"] == display_type), None)
         if ss:
             for old in call("GET", f"/appScreenshotSets/{ss['id']}/appScreenshots")["data"]:
                 call("DELETE", f"/appScreenshots/{old['id']}")
         else:
             ss = call("POST", "/appScreenshotSets", {"data": {"type": "appScreenshotSets",
-                 "attributes": {"screenshotDisplayType": "APP_IPHONE_67"},
+                 "attributes": {"screenshotDisplayType": display_type},
                  "relationships": {"appStoreVersionLocalization": {"data": {"type": "appStoreVersionLocalizations", "id": lid}}}}})["data"]
-        for f in sorted(glob.glob("store/appstore/iphone-69-*.png")):
+        for f in sorted(glob.glob(pattern)):
             data = pathlib.Path(f).read_bytes()
             shot = call("POST", "/appScreenshots", {"data": {"type": "appScreenshots",
                 "attributes": {"fileName": os.path.basename(f), "fileSize": len(data)},
@@ -208,7 +208,8 @@ def main():
                                  headers={h["name"]: h["value"] for h in op["requestHeaders"]}, timeout=120).raise_for_status()
             call("PATCH", f"/appScreenshots/{shot['id']}", {"data": {"type": "appScreenshots", "id": shot["id"],
                  "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
-    step("iPhone 6.9-inch screenshots", screenshots)
+    step("iPhone 6.9-inch screenshots", lambda: upload_set("APP_IPHONE_67", "store/appstore/iphone-69-*.png"))
+    step("iPad 13-inch screenshots", lambda: upload_set("APP_IPAD_PRO_3GEN_129", "store/appstore/ipad-13-*.png"))
 
     step("Content rights (no third-party content)", lambda: call("PATCH", f"/apps/{app_id}", {"data": {
         "type": "apps", "id": app_id, "attributes": {"contentRightsDeclaration": "DOES_NOT_USE_THIRD_PARTY_CONTENT"}}}))
