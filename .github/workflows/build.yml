@@ -111,6 +111,43 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Developer ID signing and notarization enabled."
 
+      # Windows: Microsoft Artifact Signing (Lumisha LLC). Needs the secrets
+      # AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET (an app
+      # registration with the "Artifact Signing Certificate Profile Signer" role
+      # on the signing account). Without them the build stays unsigned.
+      - name: Configure Windows signing
+        if: matrix.platform == 'win'
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SIGN_ENDPOINT: ${{ vars.AZURE_SIGN_ENDPOINT || 'https://eus.codesigning.azure.net/' }}
+          SIGN_ACCOUNT: ${{ vars.AZURE_SIGN_ACCOUNT || 'trexpanda-signing' }}
+          SIGN_PROFILE: ${{ vars.AZURE_SIGN_PROFILE || 'trexpanda-public' }}
+        run: |
+          if (-not $env:AZURE_CLIENT_SECRET -or -not $env:AZURE_CLIENT_ID) { Write-Host "Azure signing not configured; building unsigned."; exit 0 }
+          $dir = Join-Path $env:RUNNER_TEMP 'azsign'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Invoke-WebRequest -Uri 'https://www.nuget.org/api/v2/package/Microsoft.Trusted.Signing.Client' -OutFile "$dir\client.zip"
+          Expand-Archive "$dir\client.zip" -DestinationPath "$dir\client" -Force
+          $dlib = Get-ChildItem "$dir\client" -Recurse -Filter 'Azure.CodeSigning.Dlib.dll' | Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1
+          if (-not $dlib) { throw "Azure.CodeSigning.Dlib.dll not found in the NuGet package" }
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe | Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found" }
+          $meta = Join-Path $dir 'metadata.json'
+          @{ Endpoint = $env:SIGN_ENDPOINT; CodeSigningAccountName = $env:SIGN_ACCOUNT; CertificateProfileName = $env:SIGN_PROFILE; ExcludeCredentials = @('ManagedIdentityCredential','WorkloadIdentityCredential','SharedTokenCacheCredential','VisualStudioCredential','VisualStudioCodeCredential','AzureCliCredential','AzurePowerShellCredential','AzureDeveloperCliCredential','InteractiveBrowserCredential') } | ConvertTo-Json | Set-Content -Path $meta -Encoding utf8
+          @(
+            "TREX_AZURE_SIGN=1",
+            "TREX_SIGN_DLIB=$($dlib.FullName)",
+            "TREX_SIGN_METADATA=$meta",
+            "TREX_SIGNTOOL=$($signtool.FullName)",
+            "AZURE_TENANT_ID=$env:AZURE_TENANT_ID",
+            "AZURE_CLIENT_ID=$env:AZURE_CLIENT_ID",
+            "AZURE_CLIENT_SECRET=$env:AZURE_CLIENT_SECRET"
+          ) | Add-Content -Path $env:GITHUB_ENV
+          Write-Host "Artifact Signing enabled: $env:SIGN_ACCOUNT / $env:SIGN_PROFILE via $($signtool.FullName)"
+
       - name: Build the installer
         shell: bash
         run: |
