@@ -137,6 +137,13 @@ jobs:
           if (-not $signtool) { throw "signtool.exe not found" }
           $meta = Join-Path $dir 'metadata.json'
           @{ Endpoint = $env:SIGN_ENDPOINT; CodeSigningAccountName = $env:SIGN_ACCOUNT; CertificateProfileName = $env:SIGN_PROFILE; ExcludeCredentials = @('ManagedIdentityCredential','WorkloadIdentityCredential','SharedTokenCacheCredential','VisualStudioCredential','VisualStudioCodeCredential','AzureCliCredential','AzurePowerShellCredential','AzureDeveloperCliCredential','InteractiveBrowserCredential') } | ConvertTo-Json | Set-Content -Path $meta -Encoding utf8
+          # Probe: sign a throwaway copy of a system exe. Until Microsoft finishes the
+          # identity validation and the certificate profile exists, this fails and the
+          # build continues unsigned (with a warning) instead of breaking releases.
+          $probe = Join-Path $dir 'probe.exe'
+          Copy-Item "$env:WINDIR\System32\where.exe" $probe
+          & $signtool.FullName sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib $dlib.FullName /dmdf $meta $probe 2>&1 | Out-Host
+          if ($LASTEXITCODE -ne 0) { Write-Host "::warning title=Windows signing not ready::Artifact Signing probe failed (identity validation or certificate profile '$env:SIGN_PROFILE' not ready yet). Building unsigned."; exit 0 }
           @(
             "TREX_AZURE_SIGN=1",
             "TREX_SIGN_DLIB=$($dlib.FullName)",
