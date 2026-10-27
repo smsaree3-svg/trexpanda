@@ -163,8 +163,14 @@ def main():
     step("App Review contact and notes", review)
 
     def build():
-        b = call("GET", f"/builds?filter[app]={app_id}&filter[preReleaseVersion.version]={VERSION}"
-                         f"&filter[processingState]=VALID&sort=-uploadedDate&limit=1")["data"][0]
+        for _ in range(60):  # wait for Apple to finish processing the newest upload
+            b = call("GET", f"/builds?filter[app]={app_id}&filter[preReleaseVersion.version]={VERSION}"
+                             f"&sort=-uploadedDate&limit=1")["data"][0]
+            if b["attributes"]["processingState"] != "PROCESSING":
+                break
+            time.sleep(30)
+        if b["attributes"]["processingState"] != "VALID":
+            raise RuntimeError(f"newest build {b['attributes']['version']} is {b['attributes']['processingState']}")
         call("PATCH", f"/appStoreVersions/{vid}/relationships/build", {"data": {"type": "builds", "id": b["id"]}})
         note(f"Attached build {b['attributes']['version']}")
     step("Attach build", build)
