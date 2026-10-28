@@ -14,8 +14,10 @@ class SnippetAdapter(
 ) : RecyclerView.Adapter<SnippetAdapter.VH>() {
 
     private val items = mutableListOf<Snippet>()
+    private var usage: org.json.JSONObject = org.json.JSONObject()
 
-    fun submit(list: List<Snippet>) {
+    fun submit(list: List<Snippet>, usageStats: org.json.JSONObject? = null) {
+        if (usageStats != null) usage = usageStats
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()
@@ -36,7 +38,8 @@ class SnippetAdapter(
         private val delete: ImageButton = view.findViewById(R.id.itemDelete)
 
         fun bind(s: Snippet) {
-            trigger.text = s.trigger ?: ""
+            val uses = UsageStats.countFor(usage, s)
+            trigger.text = if (uses > 0) "${s.trigger}  ·  used ${uses}×" else s.trigger
             val raw = s.replacement.replace(Regex("\\s+"), " ").trim()
             val att = SnippetAttachment.parse(s.attachment)?.let { "📎 ${it.name}  " } ?: ""
             preview.text = if (s.enabled) att + raw else "$att$raw  (disabled)"

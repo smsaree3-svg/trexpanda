@@ -40,6 +40,27 @@ struct SupabaseAPI {
                            extraHeaders: ["Prefer": "resolution=merge-duplicates,return=minimal"])
     }
 
+    /// Upload this iPhone's usage row (one row per device; readers sum them).
+    func pushUsage(deviceId: String, usage: UsageData) async throws {
+        let (token, uid) = try await credentials()
+        let row: [String: Any] = [
+            "user_id": uid, "device_id": deviceId, "platform": "ios",
+            "by_key": UsageLog.toJSON(usage.byKey), "totals": UsageLog.toJSON(usage.totals),
+            "updated_at": ISO8601DateFormatter().string(from: Date()),
+        ]
+        let body = try JSONSerialization.data(withJSONObject: row)
+        _ = try await send(AppConfig.restURL("usage_stats?on_conflict=user_id,device_id"), method: "POST", token: token, body: body,
+                           extraHeaders: ["Prefer": "resolution=merge-duplicates,return=minimal"])
+    }
+
+    /// Every device's usage row for the signed-in user.
+    func pullUsage() async throws -> [[String: Any]] {
+        let (token, uid) = try await credentials()
+        let data = try await send(AppConfig.restURL("usage_stats?user_id=eq.\(uid)&select=device_id,platform,by_key,totals,updated_at"),
+                                  method: "GET", token: token, body: nil)
+        return (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+    }
+
     /// Deletes the account and all its cloud data. Returns nil on success, or the
     /// server's user-facing reason when it refuses (e.g. an active subscription).
     func deleteAccount() async throws -> String? {

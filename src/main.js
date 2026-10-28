@@ -7,7 +7,7 @@ const os = require('os');
 const { exec } = require('child_process');
 
 const { Expander } = require('./expander');
-const { Store, mergeSnippetsForSync, safeFileName, genSnippetId } = require('./store');
+const { Store, mergeSnippetsForSync, combineUsage, safeFileName, genSnippetId } = require('./store');
 const { charFor, K, CAPS_LOCK } = require('./keymap');
 const inject = require('./inject');
 const { fetchTeamLibrary, writeTeamLibrary } = require('./sync');
@@ -30,6 +30,8 @@ let planRaw = null; // last-known RAW entitlement snapshot (see currentPlan)
 let hookRunning = false;
 let syncTimer = null;
 let cloudSyncTimer = null;
+let remoteUsage = []; // other devices' usage rows (cloud)
+let usagePushTimer = null;
 let stats = {
   expansionsThisSession: 0,
   lastSyncAt: null,
@@ -354,6 +356,32 @@ async function expandAttachment(action) {
   }
 }
 
+function combinedUsage() {
+  try { return combineUsage(store.getUsageStats(), remoteUsage, store.getDeviceId()); }
+  catch (_) { return store.getUsageStats(); }
+}
+
+/** Upload this device's usage and fetch the other devices', so counts and time saved add up everywhere. */
+async function syncUsage() {
+  if (!cloud || !cloud.configured()) return;
+  try {
+    const st = await cloud.status();
+    if (!st || !st.signedIn) { remoteUsage = []; return; }
+    const u = store.getUsageStats();
+    await cloud.pushUsage({ deviceId: store.getDeviceId(), platform: process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : process.platform, byKey: u.byKey, totals: u.totals });
+    remoteUsage = await cloud.pullUsage();
+    pushState();
+  } catch (err) {
+    console.error('Usage sync failed:', err.message || err);
+  }
+}
+
+/** Push usage shortly after expansions (batched, so typing bursts make one request). */
+function scheduleUsagePush() {
+  if (usagePushTimer) return;
+  usagePushTimer = setTimeout(() => { usagePushTimer = null; syncUsage(); }, 60 * 1000);
+}
+
 /** Count a use of the snippet behind `action` and the characters it saved. */
 function recordExpansion(action) {
   try {
@@ -364,6 +392,7 @@ function recordExpansion(action) {
     const typed = Number(action.backspaces) || trig.length;
     const out = String(action.replacement || '').length;
     store.recordUse(key, typed, out);
+    scheduleUsagePush();
   } catch (err) {
     console.error('Usage stats not recorded:', err);
   }
@@ -490,6 +519,7 @@ async function syncPersonal() {
     stats.lastCloudSyncAt = new Date().toISOString();
     rebuildEngine();
     pushState();
+    syncUsage(); // combined use counts / time saved across devices
     return { ok: true, pulled: remote.length, pushed: merged.push.length };
   } catch (err) {
     stats.lastCloudSyncError = String(err.message || err);
@@ -715,7 +745,7 @@ function pushState() {
     version: app.getVersion(),
     stats,
     plan: currentPlan(),
-    usage: store.getUsageStats(),
+    usage: combinedUsage(),
     created: store.ensureSnippetCreated(),
     engine: {
       injectionAvailable: inject.available(),
@@ -741,7 +771,7 @@ function registerIpc() {
     settings: store.getSettings(),
     stats,
     plan: currentPlan(),
-    usage: store.getUsageStats(),
+    usage: combinedUsage(),
     created: store.ensureSnippetCreated(),
     engine: {
       injectionAvailable: inject.available(),

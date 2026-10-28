@@ -49,6 +49,15 @@ class SyncManager(
                 store.applySynced(merged.live, merged.tombstones)
                 val pushed = cloud.pushSnippets(merged.push)
                 Log.i(TAG, "sync ok: pulled=${remote.size} pushed=$pushed live=${merged.live.size}")
+                try {
+                    // Use counts and time saved, combined across every device.
+                    val dev = UsageStats.deviceId(appContext)
+                    val local = UsageStats.local(appContext)
+                    cloud.pushUsage(dev, local)
+                    UsageStats.saveCombined(appContext, UsageStats.combine(local, cloud.pullUsage(), dev))
+                } catch (e: Exception) {
+                    Log.w(TAG, "usage sync failed", e)
+                }
                 done?.onResult(true, "Synced (${merged.live.size} snippets).")
             } catch (e: Exception) {
                 Log.w(TAG, "sync failed", e)

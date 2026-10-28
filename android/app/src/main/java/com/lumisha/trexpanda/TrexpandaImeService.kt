@@ -111,6 +111,7 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
         } finally {
             ic.endBatchEdit()
         }
+        UsageStats.recordTrigger(this, action.trigger, currentToken.length, action.replacement.length)
         engine.reset()
         clearSuggestions()
         deliverAttachment(action.attachment)
@@ -137,6 +138,7 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
         } finally {
             ic.endBatchEdit()
         }
+        UsageStats.recordTrigger(this, action.trigger, action.backspaces, action.replacement.length)
         engine.reset()
         clearSuggestions()
         deliverAttachment(action.attachment)

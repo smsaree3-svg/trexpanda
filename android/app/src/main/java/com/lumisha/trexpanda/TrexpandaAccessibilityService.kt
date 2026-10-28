@@ -75,7 +75,7 @@ class TrexpandaAccessibilityService : AccessibilityService() {
             val typed = event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED && event.addedCount > 0
             if (typed && System.currentTimeMillis() - lastEditAt >= 150) {
                 val edit = AnyKeyboardExpander.expand(engine, text, caret)
-                if (edit != null) { apply(node, edit); hideStrip(); return }
+                if (edit != null) { if (apply(node, edit)) recordUse(edit, text); hideStrip(); return }
             }
 
             // 2. Otherwise suggest snippets for the trigger being typed.
@@ -89,7 +89,14 @@ class TrexpandaAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun apply(node: AccessibilityNodeInfo, edit: AnyKeyboardExpander.Edit) {
+    /** Count the expansion: characters added beyond what was typed are the ones saved. */
+    private fun recordUse(edit: AnyKeyboardExpander.Edit, before: String) {
+        val typed = edit.trigger.length
+        val added = (edit.text.length - before.length).coerceAtLeast(0)
+        UsageStats.recordTrigger(this, edit.trigger, typed, typed + added)
+    }
+
+    private fun apply(node: AccessibilityNodeInfo, edit: AnyKeyboardExpander.Edit): Boolean {
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, edit.text)
         }
@@ -101,7 +108,9 @@ class TrexpandaAccessibilityService : AccessibilityService() {
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel)
             pasteAttachment(node, edit.attachment)
+            return true
         }
+        return false
     }
 
     /**
@@ -130,7 +139,7 @@ class TrexpandaAccessibilityService : AccessibilityService() {
                 if (!node.isEditable || node.isPassword) return
                 val text = node.text?.toString() ?: ""
                 val caret = node.textSelectionEnd.takeIf { it >= 0 } ?: text.length
-                AnyKeyboardExpander.applySuggestion(engine, text, caret, trigger)?.let { apply(node, it) }
+                AnyKeyboardExpander.applySuggestion(engine, text, caret, trigger)?.let { if (apply(node, it)) recordUse(it, text) }
             } finally {
                 @Suppress("DEPRECATION")
                 node.recycle()

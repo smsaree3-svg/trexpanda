@@ -330,6 +330,13 @@
                     android:textSize="12sp"
                     android:textStyle="bold"
                     android:letterSpacing="0.13" />
+
+                <TextView
+                    android:id="@+id/timeSavedText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/muted"
+                    android:textSize="12sp" />
             </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView

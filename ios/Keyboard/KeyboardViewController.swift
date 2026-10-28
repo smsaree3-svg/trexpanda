@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 final class KeyboardViewController: UIInputViewController {
 
     private let engine = ExpanderEngine()
+    private var loadedSnippets: [Snippet] = []
     private var shifted = true
     private var symbols = false
     /// A short message shown in the suggestion bar (e.g. "attachment copied").
@@ -75,7 +76,8 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Reload every time the keyboard appears, so edits in the app apply at once.
-        engine.setSnippets(SharedStore.loadSnippets().filter { $0.enabled && !$0.isDeleted })
+        loadedSnippets = SharedStore.loadSnippets().filter { $0.enabled && !$0.isDeleted }
+        engine.setSnippets(loadedSnippets)
         symbols = false; moreSymbols = false; capsLock = false
         shifted = shouldAutoCapitalize()
         rebuildKeys()
@@ -112,6 +114,7 @@ final class KeyboardViewController: UIInputViewController {
         textDocumentProxy.insertText(action.replacement)
         if action.caretBack > 0 { textDocumentProxy.adjustTextPosition(byCharacterOffset: -action.caretBack) }
         UIDevice.current.playInputClick()
+        recordUse(action, typed: action.backspaces)
         if let att = action.attachment { copyAttachment(att, trigger: action.trigger) }
     }
 
@@ -214,12 +217,23 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
 
+    /// Count the expansion for the "Uses" and time-saved figures (needs Full Access).
+    private func recordUse(_ action: ExpanderEngine.Action, typed: Int) {
+        guard hasFullAccess else { return }
+        let lc = action.trigger.lowercased()
+        let key = loadedSnippets.first { $0.trigger.lowercased() == lc }?.id ?? ("t:" + action.trigger)
+        UsageLog.record(key: key, typedChars: max(typed, lastSuggestionTyped), outChars: action.replacement.count)
+        lastSuggestionTyped = 0
+    }
+    private var lastSuggestionTyped = 0
+
     private func useSuggestion(_ trigger: String) {
         // Remove the partial token the user typed, then insert the snippet.
         let before = textDocumentProxy.documentContextBeforeInput ?? ""
         let token = before.split(whereSeparator: { $0.isWhitespace }).last.map(String.init) ?? ""
         guard let action = engine.snippetAction(trigger) else { return }
         for _ in 0..<token.count { textDocumentProxy.deleteBackward() }
+        lastSuggestionTyped = token.count
         apply(ExpanderEngine.Action(trigger: action.trigger, replacement: action.replacement,
                                     backspaces: 0, caretBack: action.caretBack,
                                     attachment: action.attachment))

@@ -241,7 +241,7 @@ function fmtDuration(min) {
 
 function renderSavings() {
   const t = (state.usage && state.usage.totals) || {};
-  const wpm = Math.max(5, Number((state.settings || {}).typingWpm) || 40);
+  const wpm = Math.max(5, Number((state.settings || {}).typingWpm) || 35);
   const words = (t.savedChars || 0) / 5; // standard: 5 characters = 1 word
   $('sv-time').textContent = fmtDuration(words / wpm);
   $('sv-exp').textContent = (t.expansions || 0).toLocaleString();
@@ -249,7 +249,9 @@ function renderSavings() {
   const inp = $('sv-wpm');
   if (document.activeElement !== inp) inp.value = wpm;
   const since = t.since ? ' since ' + fmtShortDate(t.since) : '';
-  $('sv-time').parentElement.title = 'Characters saved ÷ 5 = words, ÷ your WPM = minutes' + since + ' (this computer).';
+  const dev = t.devices > 1 ? ' across ' + t.devices + ' devices' : '';
+  $('sv-time').parentElement.title = 'Characters saved ÷ 5 = words, ÷ your WPM = minutes' + since + dev + '.';
+  $('sv-exp').nextElementSibling.textContent = 'Expansions' + dev;
 }
 
 function sortedSnippets(list) {
@@ -287,7 +289,7 @@ function renderSnippets() {
     const rich = s.html ? ' <span class="pill ok" title="Formatted (rich text)" style="padding:1px 7px">styled</span>' : '';
     const name = s.label && s.label !== s.trigger ? '<div class="hint" style="margin:2px 0 0">' + esc(s.label) + '</div>' : '';
     const u = usageFor(s);
-    const usedTitle = u.lastUsedAt ? 'Last used ' + new Date(u.lastUsedAt).toLocaleString() : 'Not used yet on this computer';
+    const usedTitle = u.lastUsedAt ? 'Last used ' + new Date(u.lastUsedAt).toLocaleString() : 'Not used yet';
     tr.innerHTML =
       '<td class="chk"><input type="checkbox" data-sel="' + esc(s.id) + '"' + (selected.has(s.id) ? ' checked' : '') + ' /></td>' +
       '<td><code>' + esc(s.trigger) + '</code>' + name + '</td>' +
@@ -879,7 +881,7 @@ if ($('snip-search')) $('snip-search').addEventListener('input', renderSnippets)
   $('bulk-clear').addEventListener('click', () => { selected.clear(); renderSnippets(); });
   const wpm = $('sv-wpm');
   wpm.addEventListener('change', async () => {
-    const v = Math.min(200, Math.max(5, Math.round(Number(wpm.value) || 40)));
+    const v = Math.min(200, Math.max(5, Math.round(Number(wpm.value) || 35)));
     wpm.value = v;
     await window.api.saveSettings({ typingWpm: v });
     refresh();

@@ -78,6 +78,49 @@ class SupabaseClient(private val auth: AuthManager) {
         return rows.size
     }
 
+    /** Upload this device's usage row (one row per device; others are summed by readers). */
+    @Throws(IOException::class)
+    fun pushUsage(deviceId: String, local: JSONObject) {
+        val token = auth.freshAccessToken() ?: throw IOException("Not signed in.")
+        val uid = auth.userId ?: throw IOException("Not signed in.")
+        val row = JSONObject()
+            .put("user_id", uid).put("device_id", deviceId).put("platform", "android")
+            .put("by_key", local.optJSONObject("byKey") ?: JSONObject())
+            .put("totals", local.optJSONObject("totals") ?: JSONObject())
+            .put("updated_at", java.time.Instant.now().toString())
+        val req = Request.Builder()
+            .url(SupabaseConfig.restUrl("usage_stats?on_conflict=user_id,device_id"))
+            .addHeader("apikey", SupabaseConfig.anonKey)
+            .addHeader("Authorization", "Bearer $token")
+            .addHeader("Content-Type", "application/json")
+            .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
+            .post(row.toString().toRequestBody(JSON))
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("Usage upload failed (${resp.code}): ${resp.body?.string()}")
+        }
+    }
+
+    /** All of the caller's per-device usage rows. */
+    @Throws(IOException::class)
+    fun pullUsage(): List<JSONObject> {
+        val token = auth.freshAccessToken() ?: throw IOException("Not signed in.")
+        val uid = auth.userId ?: throw IOException("Not signed in.")
+        val req = Request.Builder()
+            .url(SupabaseConfig.restUrl("usage_stats?user_id=eq.$uid&select=device_id,platform,by_key,totals,updated_at"))
+            .addHeader("apikey", SupabaseConfig.anonKey)
+            .addHeader("Authorization", "Bearer $token")
+            .addHeader("Accept", "application/json")
+            .get()
+            .build()
+        return http.newCall(req).execute().use { resp ->
+            val body = resp.body?.string() ?: "[]"
+            if (!resp.isSuccessful) throw IOException("Usage read failed (${resp.code}): $body")
+            val arr = JSONArray(body)
+            (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+        }
+    }
+
     /**
      * Permanently delete the signed-in user's account and all their cloud data
      * (the delete_my_account RPC). Returns null on success, or a user-facing

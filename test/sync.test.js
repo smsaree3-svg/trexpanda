@@ -284,8 +284,25 @@ test('usage stats count uses per snippet and characters saved, and survive an ac
   store.adoptForAccount('a'); store.adoptForAccount('b');
   const nid = store.getPersonal()[0].id;
   assert.notStrictEqual(nid, id);
-  assert.strictEqual(store.getUsageStats().byKey[nid].count, 2);
+  assert.strictEqual(store.getUsageStats().totals.expansions, 0); // other account: usage starts fresh
   assert.strictEqual(store.getSnippetCreated()[nid], created[id]);
+});
+
+test('combineUsage adds counts across devices and ignores this device\'s stale cloud row', () => {
+  const { combineUsage } = require('../src/store');
+  const local = { byKey: { a: { count: 3, lastUsedAt: '2026-10-02T00:00:00Z' } }, totals: { expansions: 3, savedChars: 60, typedChars: 9, since: '2026-10-01T00:00:00Z' } };
+  const rows = [
+    { device_id: 'me', by_key: { a: { count: 1 } }, totals: { expansions: 1, savedChars: 20 } },
+    { device_id: 'phone', by_key: { a: { count: 5, lastUsedAt: '2026-10-05T00:00:00Z' }, b: { count: 2 } }, totals: { expansions: 7, savedChars: 140, since: '2026-09-20T00:00:00Z' } },
+  ];
+  const c = combineUsage(local, rows, 'me');
+  assert.strictEqual(c.byKey.a.count, 8);
+  assert.strictEqual(c.byKey.a.lastUsedAt, '2026-10-05T00:00:00Z');
+  assert.strictEqual(c.byKey.b.count, 2);
+  assert.strictEqual(c.totals.expansions, 10);
+  assert.strictEqual(c.totals.savedChars, 200);
+  assert.strictEqual(c.totals.since, '2026-09-20T00:00:00Z');
+  assert.strictEqual(c.totals.devices, 2);
 });
 
 test('safeFileName strips paths and shell characters from shared attachment names', () => {

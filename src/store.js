@@ -363,6 +363,41 @@ function mergeSnippetsForSync({ live = [], tombstones = [], remote = [], now = D
   return { live: newLive, tombstones: newTombs, push };
 }
 
+/**
+ * Combine this device's usage with the other devices' cloud rows (pure).
+ * Counts and characters add up; "last used" is the latest anywhere; "since" is
+ * the earliest. This device's own cloud row is ignored in favour of `local`
+ * (which is always at least as fresh).
+ * @param {{byKey:object, totals:object}} local
+ * @param {Array<{device_id:string, by_key:object, totals:object}>} rows
+ * @param {string} deviceId
+ */
+function combineUsage(local, rows = [], deviceId = '') {
+  const byKey = {};
+  const totals = { expansions: 0, savedChars: 0, typedChars: 0, since: null, devices: 0 };
+  const add = (bk, t) => {
+    totals.devices += 1;
+    for (const [k, v] of Object.entries(bk || {})) {
+      if (!v || typeof v !== 'object') continue;
+      const cur = byKey[k] || { count: 0, lastUsedAt: null };
+      cur.count += Math.max(0, Number(v.count) || 0);
+      if (v.lastUsedAt && (!cur.lastUsedAt || Date.parse(v.lastUsedAt) > Date.parse(cur.lastUsedAt))) cur.lastUsedAt = v.lastUsedAt;
+      byKey[k] = cur;
+    }
+    const tt = t || {};
+    totals.expansions += Math.max(0, Number(tt.expansions) || 0);
+    totals.savedChars += Math.max(0, Number(tt.savedChars) || 0);
+    totals.typedChars += Math.max(0, Number(tt.typedChars) || 0);
+    if (tt.since && (!totals.since || Date.parse(tt.since) < Date.parse(totals.since))) totals.since = tt.since;
+  };
+  add(local && local.byKey, local && local.totals);
+  for (const r of rows || []) {
+    if (!r || r.device_id === deviceId) continue;
+    add(r.by_key, r.totals);
+  }
+  return { byKey, totals };
+}
+
 // ---------------------------------------------------------------------------
 // Persistent store (runtime only — requires electron-store).
 // ---------------------------------------------------------------------------
@@ -482,6 +517,7 @@ class Store {
       });
       this.backend.set('personalSnippets', list);
       this.rekeyLocalMeta(idMap);
+      this.resetUsageStats(); // the previous account's usage isn't this account's
       this.setSnippetTombstones([]);
       changed = true;
     }
@@ -529,6 +565,18 @@ class Store {
     if (!u.totals.since) u.totals.since = isoAt(now);
     this.backend.set('usageStats', u);
     return u;
+  }
+
+  /** A stable random id for this installation (one usage row per device). */
+  getDeviceId() {
+    let id = this.backend.get('deviceId', null);
+    if (!id) { id = genSnippetId(); this.backend.set('deviceId', id); }
+    return id;
+  }
+
+  /** Forget this device's usage (another account signed in here). */
+  resetUsageStats() {
+    this.backend.set('usageStats', { byKey: {}, totals: { expansions: 0, savedChars: 0, typedChars: 0, since: null } });
   }
 
   /** Creation times by snippet id (local). Backfilled from updatedAt for older snippets. */
@@ -651,7 +699,7 @@ class Store {
       showSuggestions: true, // live autocomplete popup while typing a trigger
       cloudSubscriptions: [], // library ids (shared with me) to pull on sync
       publishToCloud: false, // auto-publish personal snippets to my cloud library
-      typingWpm: 40, // typing speed used for the time-saved estimate
+      typingWpm: 35, // typing speed used for the time-saved estimate
     });
   }
   setSettings(next) {
@@ -671,5 +719,5 @@ class Store {
 
 module.exports = {
   normalizeSnippet, sanitizeUntrustedHtml, mergeSnippets, combineShared, parseLibrary,
-  mergeSnippetsForSync, genSnippetId, safeFileName, Store,
+  mergeSnippetsForSync, combineUsage, genSnippetId, safeFileName, Store,
 };

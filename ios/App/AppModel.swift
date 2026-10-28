@@ -7,6 +7,7 @@ import SwiftUI
 final class AppModel: ObservableObject {
     @Published private(set) var snippets: [Snippet] = []
     @Published var status: String?
+    @Published private(set) var usage: UsageData = UsageLog.combined()
     @Published var isSyncing = false
     @Published var alert: AlertItem?
 
@@ -125,6 +126,14 @@ final class AppModel: ObservableObject {
             persist()
             try await api.pushSnippets(merged.push)
             Self.lastSyncedUser = auth.userId
+            // Use counts and time saved, combined across every device.
+            let dev = UsageLog.deviceId()
+            let local = UsageLog.local()
+            if (try? await api.pushUsage(deviceId: dev, usage: local)) != nil,
+               let rows = try? await api.pullUsage() {
+                UsageLog.saveCombined(UsageLog.combine(local: local, rows: rows, deviceId: dev))
+            }
+            usage = UsageLog.combined()
             status = "Synced \(merged.live.count) snippet\(merged.live.count == 1 ? "" : "s")"
         } catch {
             status = "Sync failed: \(error.localizedDescription)"
@@ -139,6 +148,7 @@ final class AppModel: ObservableObject {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         snippets = snippets.map { var s = $0; s.id = UUID().uuidString.lowercased(); s.updatedAt = now; return s }
         tombstones = []
+        UsageLog.reset() // another account's usage isn't this account's
         persist()
     }
 

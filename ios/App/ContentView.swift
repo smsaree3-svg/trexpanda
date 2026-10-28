@@ -27,7 +27,7 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(model.sortedSnippets) { s in
-                        Button { editing = s } label: { SnippetRow(snippet: s) }
+                        Button { editing = s } label: { SnippetRow(snippet: s, uses: model.usage.count(for: s)) }
                             .foregroundStyle(.primary)
                             .swipeActions(edge: .leading) {
                                 if s.attachment != nil {
@@ -41,7 +41,14 @@ struct ContentView: View {
                         items.forEach(model.delete)
                     }
                 } header: {
-                    Text("Snippets")
+                    HStack {
+                        Text("Snippets")
+                        Spacer()
+                        if model.usage.totals.expansions > 0 {
+                            Text("⏱ \(UsageData.formatDuration(model.usage.minutesSaved())) saved")
+                                .textCase(nil)
+                        }
+                    }
                 } footer: {
                     if let status = model.status { Text(status) }
                 }
@@ -91,6 +98,7 @@ struct ContentView: View {
 
 struct SnippetRow: View {
     let snippet: Snippet
+    var uses: Int = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
@@ -99,6 +107,9 @@ struct SnippetRow: View {
                     Image(systemName: att.isImage ? "photo" : "paperclip")
                         .font(.caption).foregroundStyle(.secondary)
                         .accessibilityLabel("Has attachment \(att.name)")
+                }
+                if uses > 0 {
+                    Text("used \(uses)×").font(.caption).foregroundStyle(.secondary)
                 }
                 if !snippet.enabled {
                     Text("Off").font(.caption2.weight(.bold)).padding(.horizontal, 6).padding(.vertical, 2)

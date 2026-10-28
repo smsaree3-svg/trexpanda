@@ -189,6 +189,30 @@ class CloudService {
     return { ok: true, count: payload.length };
   }
 
+  // -- usage stats (one row per device; readers sum them) --------------------
+
+  async pullUsage() {
+    const client = this._requireClient();
+    const me = await this._uid();
+    const { data, error } = await client
+      .from('usage_stats')
+      .select('device_id, platform, by_key, totals, updated_at')
+      .eq('user_id', me);
+    if (error) throw new Error(error.message || 'Could not read usage.');
+    return data || [];
+  }
+
+  async pushUsage({ deviceId, platform, byKey, totals }) {
+    const client = this._requireClient();
+    const me = await this._uid();
+    const { error } = await client.from('usage_stats').upsert({
+      user_id: me, device_id: deviceId, platform: platform || null,
+      by_key: byKey || {}, totals: totals || {}, updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,device_id' });
+    if (error) throw new Error(error.message || 'Could not save usage.');
+    return { ok: true };
+  }
+
   /** Redeem a coupon code (server validates + records + grants). */
   async redeemCoupon(code) {
     const client = this._requireClient();

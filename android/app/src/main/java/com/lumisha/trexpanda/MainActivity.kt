@@ -165,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         val uid = auth.userId ?: return
         val owner = getSharedPreferences("trexpanda_owner", MODE_PRIVATE)
         val last = owner.getString("uid", null)
-        if (last != null && last != uid) store.clearAll()
+        if (last != null && last != uid) { store.clearAll(); UsageStats.reset(this) }
         owner.edit().putString("uid", uid).apply()
     }
 
@@ -203,7 +203,11 @@ class MainActivity : AppCompatActivity() {
             else -> "Any-keyboard mode was stopped by the phone: tap to fix"
         }
         val items = store.getPersonal().sortedBy { it.trigger ?: "" }
-        adapter.submit(items)
+        val usage = UsageStats.combined(this)
+        adapter.submit(items, usage)
+        val exp = usage.optJSONObject("totals")?.optLong("expansions") ?: 0L
+        findViewById<android.widget.TextView>(R.id.timeSavedText).text =
+            if (exp > 0) "⏱ ${UsageStats.formatDuration(UsageStats.minutesSaved(usage))} saved" else ""
         emptyState.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
     }
 
