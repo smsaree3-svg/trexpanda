@@ -238,6 +238,7 @@ function onKeyUp(e) {
 }
 
 async function onKeyDown(e) {
+  lastKeyAt = Date.now();
   // Ignore the synthetic keystrokes we inject during an expansion so they don't
   // re-enter the engine and corrupt the buffer / re-fire triggers.
   if (injecting) return;
@@ -714,6 +715,19 @@ function buildTray() {
   tray.on('click', () => createWindow());
 }
 
+let pendingUpdate = null; // version downloaded and waiting to install
+let lastKeyAt = Date.now();
+
+function installUpdateNow() {
+  try {
+    const { autoUpdater } = require('electron-updater');
+    stopHook();
+    autoUpdater.quitAndInstall(true, true); // silent install, then reopen Trexpanda
+  } catch (err) {
+    console.error('Update install failed:', err);
+  }
+}
+
 function refreshTrayMenu() {
   const settings = store.getSettings();
   const menu = Menu.buildFromTemplate([
@@ -726,6 +740,7 @@ function refreshTrayMenu() {
       click: () => { store.setSettings({ enabled: !settings.enabled }); reconcileHook(); refreshTrayMenu(); pushState(); },
     },
     { label: 'Sync team library now', click: () => syncNow() },
+    ...(pendingUpdate ? [{ type: 'separator' }, { label: `Restart to update to ${pendingUpdate}`, click: () => installUpdateNow() }] : []),
     { type: 'separator' },
     { label: 'Quit', click: () => { stopHook(); app.quit(); } },
   ]);
@@ -945,18 +960,30 @@ if (!gotLock) {
       // new versions from the website instead.
       if (process.platform !== 'darwin' || app.isPackaged) {
         const { autoUpdater } = require('electron-updater');
+        autoUpdater.autoDownload = true;
+        autoUpdater.autoInstallOnAppQuit = true;
         let notified = false;
         autoUpdater.on('update-downloaded', (info) => {
-          if (notified) return; // once, not every 4 hours
+          pendingUpdate = info.version;
+          refreshTrayMenu();
+          if (notified) return; // once, not every check
           notified = true;
           try {
-            new Notification({ title: 'Trexpanda update ready',
-              body: `Version ${info.version} installs the next time Trexpanda restarts.` }).show();
+            const n = new Notification({ title: 'Trexpanda update ready',
+              body: `Version ${info.version} installs automatically when you're not typing. Click to restart now.` });
+            n.on('click', () => installUpdateNow());
+            n.show();
           } catch (_) {}
         });
+        // Install by itself: once an update is downloaded, restart Trexpanda the
+        // first time the keyboard has been quiet for 10 minutes (takes a few
+        // seconds, then it is back in the tray with expansion on).
+        setInterval(() => {
+          if (pendingUpdate && Date.now() - lastKeyAt > 10 * 60 * 1000) installUpdateNow();
+        }, 60 * 1000);
         const check = () => autoUpdater.checkForUpdates().catch(() => {});
         check();
-        setInterval(check, 4 * 60 * 60 * 1000);
+        setInterval(check, 60 * 60 * 1000);
       }
     } catch (_) {}
   });
