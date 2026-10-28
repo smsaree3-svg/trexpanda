@@ -104,7 +104,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: >
-          gradle --no-daemon bundleRelease
+          gradle --no-daemon bundleRelease assembleRelease
           -PtrexVersionCode=${{ steps.ver.outputs.code }}
           -PtrexVersionName=${{ steps.ver.outputs.name }}
 
@@ -125,7 +125,9 @@ jobs:
         run: |
           tag="android-build-${{ steps.ver.outputs.code }}"
           cp android/app/build/outputs/bundle/release/app-release.aab "trexpanda-${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}.aab"
-          gh release create "$tag" "trexpanda-${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}.aab" \
+          # Signed universal APK too, for the direct download on trexpanda.com.
+          cp android/app/build/outputs/apk/release/app-release.apk "trexpanda-${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}.apk"
+          gh release create "$tag" "trexpanda-${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}.aab" "trexpanda-${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.code }}.apk" \
             --draft --target "$GITHUB_SHA" --title "Android ${{ steps.ver.outputs.name }} (${{ steps.ver.outputs.code }})" \
             --notes "Signed Android App Bundle for Google Play. Private draft — do not publish."
 
