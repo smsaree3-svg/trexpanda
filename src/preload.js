@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Minimal, explicit bridge — the renderer never gets raw Node/Electron access.
 contextBridge.exposeInMainWorld('api', {
   getState: () => ipcRenderer.invoke('get-state'),
+  openAccessibilitySettings: () => ipcRenderer.invoke('open-accessibility-settings'),
   savePersonal: (list) => ipcRenderer.invoke('save-personal', list),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   syncNow: () => ipcRenderer.invoke('sync-now'),

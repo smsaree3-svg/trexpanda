@@ -185,17 +185,21 @@ function renderStatus() {
   const e = state.engine || {};
   const s = state.settings || {};
   setPill('pill-expansion', s.enabled ? 'expansion on' : 'expansion off', s.enabled);
-  setPill('pill-hook', e.hookAvailable ? 'keyboard hook ✓' : 'hook missing', e.hookAvailable);
+  const hookOk = e.hookAvailable && e.macAccessibility !== false;
+  setPill('pill-hook', hookOk ? 'keyboard hook ✓' : (e.hookAvailable ? 'needs Accessibility' : 'hook missing'), hookOk);
   setPill('pill-inject', e.injectionAvailable ? 'inject ✓' : 'inject missing', e.injectionAvailable);
 
   const banner = $('engine-banner');
   const problems = [];
+  if (e.macAccessibility === false) problems.push('Trexpanda needs Accessibility permission to expand snippets on this Mac. Open System Settings → Privacy &amp; Security → Accessibility and switch <b>Trexpanda</b> on (if it is already on, remove it with − and add it again). Expansion starts automatically once allowed. <button class="btn small" id="openAxBtn">Open Accessibility settings</button>');
   if (!e.hookAvailable) problems.push(`Global keyboard capture is unavailable${e.hookError ? ' (' + e.hookError + ')' : ''}. On macOS, grant Accessibility permission in System Settings → Privacy & Security → Accessibility, then reopen.`);
   if (!e.injectionAvailable) problems.push(`Keystroke injection is unavailable${e.injectionError ? ' (' + e.injectionError + ')' : ''}. Snippets can be managed but won't expand until this is resolved.`);
   if (e.cloudConfigured === false) problems.push('Cloud is not configured in this build, so sign-in, your free trial, and expansion are all unavailable. This usually means the build is missing its Supabase settings (SUPABASE_URL / SUPABASE_ANON_KEY).');
   if (problems.length) {
     banner.className = 'banner';
     banner.innerHTML = problems.map((p) => '<div>⚠️ ' + p + '</div>').join('');
+    const ax = document.getElementById('openAxBtn');
+    if (ax) ax.onclick = () => window.api.openAccessibilitySettings && window.api.openAccessibilitySettings();
   } else {
     banner.className = '';
     banner.innerHTML = '';

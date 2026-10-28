@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, nativeImage, shell, dialog, screen, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, clipboard, nativeImage, shell, dialog, screen, Notification, systemPreferences } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -141,8 +141,52 @@ async function reconcileFreeUsage() {
 
 let hookWired = false;
 
+// macOS: reading keystrokes system-wide and typing snippets both need the
+// Accessibility permission. Without it the hook "starts" but receives nothing,
+// so check first, ask once (system prompt + open the settings pane), and start
+// the hook automatically the moment the user switches Trexpanda on there.
+let macTrusted = process.platform !== 'darwin';
+let macTrustPoll = null;
+let macPrompted = false;
+
+function macAccessibilityTrusted(prompt) {
+  if (process.platform !== 'darwin') return true;
+  try { return systemPreferences.isTrustedAccessibilityClient(!!prompt); } catch (_) { return false; }
+}
+
+function openMacAccessibilitySettings() {
+  shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility').catch(() => {});
+}
+
+function ensureMacAccessibility() {
+  macTrusted = macAccessibilityTrusted(false);
+  if (macTrusted) return true;
+  if (!macPrompted) {
+    macPrompted = true;
+    macAccessibilityTrusted(true); // system "would like to control this computer" prompt
+    openMacAccessibilitySettings();
+    try {
+      new Notification({ title: 'Allow Trexpanda in Accessibility',
+        body: 'System Settings → Privacy & Security → Accessibility: switch Trexpanda on. Expansion starts automatically.' }).show();
+    } catch (_) {}
+  }
+  if (!macTrustPoll) {
+    macTrustPoll = setInterval(() => {
+      if (!macAccessibilityTrusted(false)) return;
+      clearInterval(macTrustPoll); macTrustPoll = null;
+      macTrusted = true;
+      uiohookError = null;
+      if (store.getSettings().enabled) { stopHook(); startHook(); }
+      pushState();
+    }, 1500);
+  }
+  pushState();
+  return false;
+}
+
 function startHook() {
   if (!uIOhook || hookRunning) return;
+  if (!ensureMacAccessibility()) return;
   // Attach listeners ONCE: re-adding them on every Off/On toggle made each key
   // count twice, so no trigger could ever match.
   if (!hookWired) {
@@ -659,6 +703,7 @@ function pushState() {
       injectionError: inject.getLoadError(),
       hookAvailable: !!uIOhook,
       hookError: uiohookError ? String(uiohookError.message || uiohookError) : null,
+      macAccessibility: macTrusted,
       cloudConfigured: !!(cloud && cloud.configured()),
     },
   });
@@ -669,6 +714,8 @@ function pushState() {
 // ---------------------------------------------------------------------------
 
 function registerIpc() {
+  ipcMain.handle('open-accessibility-settings', () => { macAccessibilityTrusted(true); openMacAccessibilitySettings(); return true; });
+
   ipcMain.handle('get-state', () => ({
     personal: store.getPersonal(),
     team: store.getTeamCache(),
@@ -680,6 +727,7 @@ function registerIpc() {
       injectionError: inject.getLoadError(),
       hookAvailable: !!uIOhook,
       hookError: uiohookError ? String(uiohookError.message || uiohookError) : null,
+      macAccessibility: macTrusted,
       cloudConfigured: !!(cloud && cloud.configured()),
     },
   }));
@@ -844,7 +892,7 @@ if (!gotLock) {
     try {
       // macOS only installs updates to code-signed apps; unsigned Mac builds get
       // new versions from the website instead.
-      if (process.platform !== 'darwin') {
+      if (process.platform !== 'darwin' || app.isPackaged) {
         const { autoUpdater } = require('electron-updater');
         let notified = false;
         autoUpdater.on('update-downloaded', (info) => {
