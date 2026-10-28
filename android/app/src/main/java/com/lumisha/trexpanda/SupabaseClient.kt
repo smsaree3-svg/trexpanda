@@ -58,23 +58,36 @@ class SupabaseClient(private val auth: AuthManager) {
         val token = auth.freshAccessToken() ?: throw IOException("Not signed in.")
         val uid = auth.userId ?: throw IOException("Not signed in.")
 
-        val payload = JSONArray().apply {
-            rows.forEach { put(SnippetJson.snippetToRow(it, uid)) }
-        }
-        val req = Request.Builder()
-            .url(SupabaseConfig.restUrl("snippets?on_conflict=id"))
-            .addHeader("apikey", SupabaseConfig.anonKey)
-            .addHeader("Authorization", "Bearer $token")
-            .addHeader("Content-Type", "application/json")
-            // merge-duplicates => upsert on the primary key; minimal => no row echo.
-            .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
-            .post(payload.toString().toRequestBody(JSON))
-            .build()
-        http.newCall(req).execute().use { resp ->
-            if (!resp.isSuccessful) {
-                throw IOException("Push failed (${resp.code}): ${resp.body?.string()}")
+        // Rows with images/files can be ~1.4 MB each: send small batches so a big
+        // library never exceeds the server's request size limit.
+        val limit = 2 * 1024 * 1024
+        var batch = JSONArray()
+        var size = 0
+        fun flush() {
+            if (batch.length() == 0) return
+            val req = Request.Builder()
+                .url(SupabaseConfig.restUrl("snippets?on_conflict=id"))
+                .addHeader("apikey", SupabaseConfig.anonKey)
+                .addHeader("Authorization", "Bearer $token")
+                .addHeader("Content-Type", "application/json")
+                // merge-duplicates => upsert on the primary key; minimal => no row echo.
+                .addHeader("Prefer", "resolution=merge-duplicates,return=minimal")
+                .post(batch.toString().toRequestBody(JSON))
+                .build()
+            http.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    throw IOException("Push failed (${resp.code}): ${resp.body?.string()}")
+                }
             }
+            batch = JSONArray(); size = 0
         }
+        for (r in rows) {
+            val row = SnippetJson.snippetToRow(r, uid)
+            val n = row.toString().length
+            if (batch.length() > 0 && size + n > limit) flush()
+            batch.put(row); size += n
+        }
+        flush()
         return rows.size
     }
 

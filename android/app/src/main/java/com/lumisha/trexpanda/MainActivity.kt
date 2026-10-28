@@ -421,6 +421,8 @@ class MainActivity : AppCompatActivity() {
                     html = if (existing != null && existing.replacement != replacement) null else existing?.html,
                     label = label,
                     attachment = attachment,
+                    attachmentCleared = attachment == null &&
+                        (existing?.attachment != null || existing?.attachmentCleared == true),
                     enabled = enabledCheck.isChecked,
                 )
                 saveSnippet(existing, updated)

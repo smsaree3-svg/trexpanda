@@ -65,7 +65,21 @@ enum SyncMerge {
                 pushLocal(l)                         // remote never saw it: push
             case (let l?, let r?):
                 let remoteTs = r.deletedAt ?? r.updatedAt
-                if l.ts > remoteTs { pushLocal(l) } else { adoptRemote(r) }
+                // An image/file is only removed on purpose in the editor: if the
+                // winning copy simply lacks it, keep the other copy's attachment.
+                if l.ts > remoteTs {
+                    if !l.dead, var s = l.snippet, s.attachment == nil, r.deletedAt == nil,
+                       let ra = r.attachment, s.attachmentCleared != true {
+                        s.attachment = ra
+                        pushLocal(LocalState(dead: false, ts: l.ts, snippet: s, tombstone: nil))
+                    } else { pushLocal(l) }
+                } else if r.deletedAt == nil, r.attachment == nil, !l.dead, let la = l.snippet?.attachment {
+                    var s = r
+                    s.attachment = la
+                    s.updatedAt = max(r.updatedAt, l.ts)
+                    out.live.append(s)
+                    out.push.append(s)               // the cloud copy lost it: send it back
+                } else { adoptRemote(r) }
             default:
                 break
             }
@@ -91,6 +105,10 @@ enum SnippetReconcile {
         var kept = Set<String>()
         for var inc in incoming {
             if inc.id.isEmpty { inc.id = UUID().uuidString.lowercased() }
+            if inc.attachment != nil { inc.attachmentCleared = nil }
+            else if let existing = currentById[inc.id], existing.attachment != nil || existing.attachmentCleared == true {
+                inc.attachmentCleared = true             // removed on purpose here
+            }
             if let existing = currentById[inc.id], signature(existing) == signature(inc) {
                 inc.updatedAt = existing.updatedAt
             } else {

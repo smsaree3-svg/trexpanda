@@ -88,19 +88,30 @@ object SyncMerge {
 
                 l != null && r != null -> {
                     val remoteTs = r.deletedAt ?: r.updatedAt
+                    // An image/file is only removed on purpose in the editor: if the
+                    // winning copy simply lacks it, keep the other copy's attachment.
+                    val lAtt = l.snippet?.attachment?.takeIf { hasAttachment(it) }
+                    val rAtt = r.attachment?.takeIf { hasAttachment(it) }
                     if (l.ts > remoteTs) {
                         // Local is newer -> local wins, push it.
                         if (l.dead) {
                             keepTomb(l.tombstone!!, now)
                             push.add(deletionRow(l.tombstone))
                         } else {
-                            newLive.add(l.snippet!!)
-                            push.add(l.snippet)
+                            val s = l.snippet!!
+                            val out = if (lAtt == null && rAtt != null && !r.isDeleted && !s.attachmentCleared) s.copy(attachment = rAtt) else s
+                            newLive.add(out)
+                            push.add(out)
                         }
                     } else {
                         // Remote is newer (ties go to remote) -> adopt it, no push.
                         if (r.isDeleted) keepTomb(Tombstone(id, r.trigger, r.deletedAt!!), now)
-                        else newLive.add(r)
+                        else if (rAtt == null && lAtt != null && !l.dead) {
+                            // The cloud copy lost this device's image/file: keep it and send it back.
+                            val out = r.copy(attachment = lAtt, updatedAt = maxOf(r.updatedAt, l.ts))
+                            newLive.add(out)
+                            push.add(out)
+                        } else newLive.add(r)
                     }
                 }
             }
@@ -108,6 +119,10 @@ object SyncMerge {
 
         return Result(live = newLive, tombstones = newTombs, push = push)
     }
+
+    /** Cheap check (no JSON parsing, so it runs in plain unit tests): a non-empty attachment with data. */
+    private fun hasAttachment(raw: String): Boolean =
+        raw.isNotBlank() && raw != "null" && raw.contains("\"data\"")
 
     private fun deletionRow(t: Tombstone): Snippet =
         Snippet(

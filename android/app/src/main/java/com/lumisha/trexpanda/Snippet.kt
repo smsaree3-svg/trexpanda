@@ -23,6 +23,8 @@ data class Snippet(
     val enabled: Boolean = true,
     val updatedAt: Long = 0L,
     val deletedAt: Long? = null,
+    /** Local only: the attachment was removed on purpose in the editor (never synced). */
+    val attachmentCleared: Boolean = false,
 ) {
     val isDeleted: Boolean get() = deletedAt != null
 

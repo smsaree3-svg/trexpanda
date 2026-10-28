@@ -62,4 +62,27 @@ class SyncMergeTest {
         val r = SyncMerge.merge(emptyList(), listOf(Tombstone("g", ";g", old)), emptyList(), now)
         assertTrue(r.tombstones.isEmpty())
     }
+
+    private val att = """{"type":"image","name":"a.png","mime":"image/png","data":"iVBORw0KGgo="}"""
+
+    @Test fun newerLocalWithoutAttachmentKeepsCloudImage() {
+        val r = SyncMerge.merge(listOf(snip("a", ";ty", "Thanks!", updatedAt = now)), emptyList(),
+            listOf(snip("a", ";ty", "Thanks", updatedAt = now - 1000).copy(attachment = att)), now)
+        assertEquals(att, r.live.single().attachment)
+        assertEquals(att, r.push.single().attachment)
+    }
+
+    @Test fun newerCloudWithoutAttachmentKeepsLocalImageAndPushes() {
+        val r = SyncMerge.merge(listOf(snip("a", ";ty", "Thanks", updatedAt = now - 1000).copy(attachment = att)), emptyList(),
+            listOf(snip("a", ";ty", "Thanks!!", updatedAt = now)), now)
+        assertEquals("Thanks!!", r.live.single().replacement)
+        assertEquals(att, r.live.single().attachment)
+        assertEquals(1, r.push.size)
+    }
+
+    @Test fun deliberateRemovalStaysRemoved() {
+        val r = SyncMerge.merge(listOf(snip("a", ";ty", "Thanks", updatedAt = now).copy(attachmentCleared = true)), emptyList(),
+            listOf(snip("a", ";ty", "Thanks", updatedAt = now - 1000).copy(attachment = att)), now)
+        assertNull(r.live.single().attachment)
+    }
 }

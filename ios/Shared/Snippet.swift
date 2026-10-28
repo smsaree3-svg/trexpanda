@@ -15,6 +15,8 @@ struct Snippet: Codable, Identifiable, Equatable {
     var updatedAt: Int64
     /// Set (ms since epoch) when the row is a deletion tombstone.
     var deletedAt: Int64?
+    /// Local only: the attachment was removed on purpose in the editor (never synced).
+    var attachmentCleared: Bool?
 
     var isDeleted: Bool { deletedAt != nil }
 

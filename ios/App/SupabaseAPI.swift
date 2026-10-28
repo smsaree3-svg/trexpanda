@@ -34,10 +34,25 @@ struct SupabaseAPI {
     func pushSnippets(_ rows: [Snippet]) async throws {
         guard !rows.isEmpty else { return }
         let (token, uid) = try await credentials()
-        let payload = rows.map { Self.row(from: $0, userId: uid) }
-        let body = try JSONSerialization.data(withJSONObject: payload)
-        _ = try await send(AppConfig.restURL("snippets?on_conflict=id"), method: "POST", token: token, body: body,
-                           extraHeaders: ["Prefer": "resolution=merge-duplicates,return=minimal"])
+        // Rows with images/files can be ~1.4 MB each: send small batches so a big
+        // library never exceeds the server's request size limit.
+        let limit = 2 * 1024 * 1024
+        var batch: [[String: Any]] = []
+        var size = 0
+        func flush() async throws {
+            guard !batch.isEmpty else { return }
+            let body = try JSONSerialization.data(withJSONObject: batch)
+            _ = try await send(AppConfig.restURL("snippets?on_conflict=id"), method: "POST", token: token, body: body,
+                               extraHeaders: ["Prefer": "resolution=merge-duplicates,return=minimal"])
+            batch = []; size = 0
+        }
+        for s in rows {
+            let row = Self.row(from: s, userId: uid)
+            let n = (try? JSONSerialization.data(withJSONObject: row).count) ?? 0
+            if !batch.isEmpty && size + n > limit { try await flush() }
+            batch.append(row); size += n
+        }
+        try await flush()
     }
 
     /// Upload this iPhone's usage row (one row per device; readers sum them).

@@ -39,6 +39,7 @@ object SnippetJson {
         put("enabled", s.enabled)
         put("updatedAt", s.updatedAt)
         put("deletedAt", s.deletedAt ?: JSONObject.NULL)
+        if (s.attachmentCleared) put("attachmentCleared", true)
     }
 
     fun snippetFromLocalJson(o: JSONObject): Snippet = Snippet(
@@ -51,6 +52,7 @@ object SnippetJson {
         enabled = o.optBoolean("enabled", true),
         updatedAt = o.optLong("updatedAt", 0L),
         deletedAt = if (o.isNull("deletedAt")) null else o.optLong("deletedAt"),
+        attachmentCleared = o.optBoolean("attachmentCleared", false),
     )
 
     fun tombstoneToJson(t: Tombstone): JSONObject = JSONObject().apply {
