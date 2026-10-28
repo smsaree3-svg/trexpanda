@@ -265,6 +265,29 @@ test('Store.adoptForAccount re-keys snippets only when a different account signs
   assert.strictEqual(store.getSnippetTombstones().length, 0);
 });
 
+test('usage stats count uses per snippet and characters saved, and survive an account re-key', () => {
+  const data = {};
+  const store = new Store({ get: (k, d) => (k in data ? data[k] : d), set: (k, v) => { data[k] = v; } });
+  store.setPersonal([{ trigger: ';addr', replacement: '221 Market Street, Suite 400' }]);
+  const id = store.getPersonal()[0].id;
+  store.recordUse(id, 5, 28, Date.parse('2026-10-01T00:00:00Z'));
+  store.recordUse(id, 5, 28, Date.parse('2026-10-02T00:00:00Z'));
+  store.recordUse('t:;team', 5, 2); // shorter than the trigger: saves nothing
+  const u = store.getUsageStats();
+  assert.strictEqual(u.byKey[id].count, 2);
+  assert.strictEqual(u.byKey[id].lastUsedAt, '2026-10-02T00:00:00.000Z');
+  assert.strictEqual(u.totals.expansions, 3);
+  assert.strictEqual(u.totals.savedChars, 46);
+  assert.strictEqual(u.totals.since, '2026-10-01T00:00:00.000Z');
+  const created = store.ensureSnippetCreated();
+  assert.ok(created[id]);
+  store.adoptForAccount('a'); store.adoptForAccount('b');
+  const nid = store.getPersonal()[0].id;
+  assert.notStrictEqual(nid, id);
+  assert.strictEqual(store.getUsageStats().byKey[nid].count, 2);
+  assert.strictEqual(store.getSnippetCreated()[nid], created[id]);
+});
+
 test('safeFileName strips paths and shell characters from shared attachment names', () => {
   const { safeFileName } = require('../src/store');
   assert.strictEqual(safeFileName('..\\..\\Startup\\x.bat'), 'x.bat');

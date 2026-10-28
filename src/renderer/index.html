@@ -46,6 +46,17 @@
   button.ghost { background: transparent; }
   .toolbar { display: flex; gap: 10px; margin-bottom: 14px; align-items: center; }
   .toolbar .spacer { flex: 1; }
+  .savings { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  .savings .stat { flex: 1 1 150px; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .savings .stat .n { font-size: 22px; font-weight: 700; color: var(--text); }
+  .savings .stat .n.hl { color: var(--accent2); }
+  .savings .stat .l { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .savings .stat input { width: 64px; margin: 0; padding: 2px 6px; font-size: 18px; font-weight: 700; display: inline-block; }
+  .bulkbar { display: none; gap: 10px; align-items: center; margin: -4px 0 12px; padding: 8px 12px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; }
+  .bulkbar.on { display: flex; }
+  td.chk, th.chk { width: 28px; padding-right: 0; }
+  td.num, th.num { text-align: right; white-space: nowrap; color: var(--muted); }
+  td.when { white-space: nowrap; color: var(--muted); font-size: 12px; }
   .empty { color: var(--muted); padding: 30px; text-align: center; }
   /* editor modal */
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none;
@@ -157,7 +168,18 @@
       <button class="primary" id="btn-add">+ New snippet</button>
       <button id="btn-import">Import CSV</button>
       <button id="btn-export">Export CSV</button>
-      <input type="text" id="snip-search" placeholder="Search snippets" autocomplete="off" style="width:220px;margin:0" />
+      <input type="text" id="snip-search" placeholder="Search trigger, text or name" autocomplete="off" style="width:220px;margin:0" />
+      <select id="snip-sort" title="Sort snippets" style="width:auto;margin:0">
+        <option value="trigger-asc">Trigger A–Z</option>
+        <option value="trigger-desc">Trigger Z–A</option>
+        <option value="name-asc">Name A–Z</option>
+        <option value="name-desc">Name Z–A</option>
+        <option value="created-desc">Newest first</option>
+        <option value="created-asc">Oldest first</option>
+        <option value="uses-desc">Most used</option>
+        <option value="uses-asc">Least used</option>
+        <option value="used-desc">Recently used</option>
+      </select>
       <input type="file" id="import-input" accept=".csv,text/csv" style="display:none" />
       <span id="import-status" class="pill" style="display:none"></span>
       <span class="spacer"></span>
@@ -165,8 +187,20 @@
       <span id="pill-plan" class="pill" style="display:none"></span>
       <span id="count" class="pill"></span>
     </div>
+    <div class="savings" id="savings">
+      <div class="stat"><div class="n hl" id="sv-time">0 min</div><div class="l">Time saved typing</div></div>
+      <div class="stat"><div class="n" id="sv-exp">0</div><div class="l">Expansions</div></div>
+      <div class="stat"><div class="n" id="sv-words">0</div><div class="l">Words you didn't type</div></div>
+      <div class="stat"><div class="n"><input type="number" id="sv-wpm" min="5" max="200" step="1" value="40" /> <span style="font-size:13px;color:var(--muted)">WPM</span></div><div class="l">Your typing speed (used for the estimate)</div></div>
+    </div>
+    <div class="bulkbar" id="bulkbar">
+      <span id="bulk-count">0 selected</span>
+      <span class="spacer" style="flex:1"></span>
+      <button id="bulk-clear" class="ghost">Clear selection</button>
+      <button id="bulk-delete" class="danger">Delete selected</button>
+    </div>
     <table>
-      <thead><tr><th>Trigger</th><th>Expands to</th><th></th></tr></thead>
+      <thead><tr><th class="chk"><input type="checkbox" id="snip-all" title="Select all shown" /></th><th>Trigger</th><th>Expands to</th><th class="num">Uses</th><th>Created</th><th></th></tr></thead>
       <tbody id="snip-rows"></tbody>
     </table>
     <div id="snip-empty" class="empty">No snippets yet. Click “New snippet” to create your first one.</div>

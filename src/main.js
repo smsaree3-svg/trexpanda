@@ -284,6 +284,7 @@ async function onKeyDown(e) {
         await inject.expand(action, clipboard);
       }
       stats.expansionsThisSession++;
+      recordExpansion(action);
       pushState();
     } catch (err) {
       console.error('Injection failed:', err);
@@ -350,6 +351,21 @@ async function expandAttachment(action) {
     // Restore the user's previous clipboard shortly after (longer settle for the
     // file/image paste path).
     inject.endExpansion(clipboard, 300);
+  }
+}
+
+/** Count a use of the snippet behind `action` and the characters it saved. */
+function recordExpansion(action) {
+  try {
+    const trig = String(action.trigger || '');
+    const lc = trig.toLowerCase();
+    const own = (store.getPersonal() || []).find((x) => x && x.trigger && x.trigger.toLowerCase() === lc);
+    const key = own && own.id ? own.id : 't:' + trig;
+    const typed = Number(action.backspaces) || trig.length;
+    const out = String(action.replacement || '').length;
+    store.recordUse(key, typed, out);
+  } catch (err) {
+    console.error('Usage stats not recorded:', err);
   }
 }
 
@@ -611,6 +627,7 @@ async function insertSuggestion(trigger) {
     else if (action.html) await inject.expandHtml(action, clipboard);
     else await inject.expand(action, clipboard);
     stats.expansionsThisSession++;
+    recordExpansion(action);
     pushState();
   } catch (err) {
     console.error('Suggestion insert failed:', err);
@@ -698,6 +715,8 @@ function pushState() {
     version: app.getVersion(),
     stats,
     plan: currentPlan(),
+    usage: store.getUsageStats(),
+    created: store.ensureSnippetCreated(),
     engine: {
       injectionAvailable: inject.available(),
       injectionError: inject.getLoadError(),
@@ -722,6 +741,8 @@ function registerIpc() {
     settings: store.getSettings(),
     stats,
     plan: currentPlan(),
+    usage: store.getUsageStats(),
+    created: store.ensureSnippetCreated(),
     engine: {
       injectionAvailable: inject.available(),
       injectionError: inject.getLoadError(),

@@ -212,27 +212,94 @@ function setPill(id, text, ok) {
   el.className = 'pill ' + (ok ? 'ok' : 'bad');
 }
 
+// ---- snippet list: sort, search, bulk select, usage ------------------------
+const selected = new Set(); // snippet ids selected for bulk delete
+const SORT_KEY = 'trex.snipSort';
+
+function usageFor(s) {
+  const by = (state.usage && state.usage.byKey) || {};
+  return by[s.id] || by['t:' + s.trigger] || { count: 0, lastUsedAt: null };
+}
+function createdFor(s) {
+  const m = state.created || {};
+  return m[s.id] || s.createdAt || s.updatedAt || null;
+}
+function fmtShortDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+function fmtDuration(min) {
+  if (!isFinite(min) || min <= 0) return '0 min';
+  if (min < 1) return Math.max(1, Math.round(min * 60)) + ' sec';
+  if (min < 60) return Math.round(min) + ' min';
+  const h = Math.floor(min / 60); const m = Math.round(min - h * 60);
+  if (h < 24) return h + 'h ' + m + 'm';
+  const d = Math.floor(h / 24); return d + 'd ' + (h - d * 24) + 'h';
+}
+
+function renderSavings() {
+  const t = (state.usage && state.usage.totals) || {};
+  const wpm = Math.max(5, Number((state.settings || {}).typingWpm) || 40);
+  const words = (t.savedChars || 0) / 5; // standard: 5 characters = 1 word
+  $('sv-time').textContent = fmtDuration(words / wpm);
+  $('sv-exp').textContent = (t.expansions || 0).toLocaleString();
+  $('sv-words').textContent = Math.round(words).toLocaleString();
+  const inp = $('sv-wpm');
+  if (document.activeElement !== inp) inp.value = wpm;
+  const since = t.since ? ' since ' + fmtShortDate(t.since) : '';
+  $('sv-time').parentElement.title = 'Characters saved ÷ 5 = words, ÷ your WPM = minutes' + since + ' (this computer).';
+}
+
+function sortedSnippets(list) {
+  const mode = ($('snip-sort') && $('snip-sort').value) || 'trigger-asc';
+  const [field, dir] = mode.split('-');
+  const sign = dir === 'desc' ? -1 : 1;
+  const str = (v) => String(v || '').toLowerCase();
+  const val = {
+    trigger: (s) => str(s.trigger),
+    name: (s) => str(s.label || s.trigger),
+    created: (s) => Date.parse(createdFor(s) || 0) || 0,
+    uses: (s) => usageFor(s).count || 0,
+    used: (s) => Date.parse(usageFor(s).lastUsedAt || 0) || 0,
+  }[field] || ((s) => str(s.trigger));
+  return list.slice().sort((a, b) => {
+    const x = val(a.s), y = val(b.s);
+    if (x < y) return -1 * sign;
+    if (x > y) return 1 * sign;
+    return str(a.s.trigger) < str(b.s.trigger) ? -1 : 1;
+  });
+}
+
 function renderSnippets() {
   const rows = $('snip-rows');
   rows.innerHTML = '';
   const list = state.personal || [];
+  const ids = new Set(list.map((s) => s.id));
+  for (const id of [...selected]) if (!ids.has(id)) selected.delete(id);
   const q = (($('snip-search') && $('snip-search').value) || '').trim().toLowerCase();
   const matchQ = (s) => !q || ((s.trigger || '').toLowerCase().includes(q) || (s.replacement || '').toLowerCase().includes(q) || (s.label || '').toLowerCase().includes(q));
-  let shown = 0;
-  list.forEach((s, i) => {
-    if (!matchQ(s)) return;
-    shown++;
+  const shownItems = sortedSnippets(list.map((s, i) => ({ s, i })).filter((x) => matchQ(x.s)));
+  for (const { s, i } of shownItems) {
     const tr = document.createElement('tr');
     const att = s.attachment ? ' <span title="' + esc(s.attachment.name) + '">📎 ' + esc(s.attachment.name) + '</span>' : '';
     const rich = s.html ? ' <span class="pill ok" title="Formatted (rich text)" style="padding:1px 7px">styled</span>' : '';
+    const name = s.label && s.label !== s.trigger ? '<div class="hint" style="margin:2px 0 0">' + esc(s.label) + '</div>' : '';
+    const u = usageFor(s);
+    const usedTitle = u.lastUsedAt ? 'Last used ' + new Date(u.lastUsedAt).toLocaleString() : 'Not used yet on this computer';
     tr.innerHTML =
-      '<td><code>' + esc(s.trigger) + '</code></td>' +
+      '<td class="chk"><input type="checkbox" data-sel="' + esc(s.id) + '"' + (selected.has(s.id) ? ' checked' : '') + ' /></td>' +
+      '<td><code>' + esc(s.trigger) + '</code>' + name + '</td>' +
       '<td class="repl">' + esc(oneLine(s.replacement)) + rich + att + '</td>' +
-      '<td class="row-actions" style="text-align:right">' +
+      '<td class="num" title="' + esc(usedTitle) + '">' + (u.count || 0).toLocaleString() + '</td>' +
+      '<td class="when">' + esc(fmtShortDate(createdFor(s))) + '</td>' +
+      '<td class="row-actions" style="text-align:right;white-space:nowrap">' +
       '<button data-edit="' + i + '">Edit</button>' +
       '<button class="danger" data-del="' + i + '">Delete</button></td>';
     rows.appendChild(tr);
-  });
+  }
+  const shown = shownItems.length;
   const empty = $('snip-empty');
   if (!list.length) { empty.style.display = 'block'; empty.textContent = 'No snippets yet. Click "New snippet" to create your first one.'; }
   else if (shown === 0) { empty.style.display = 'block'; empty.textContent = 'No snippets match "' + q + '".'; }
@@ -242,6 +309,35 @@ function renderSnippets() {
     b.addEventListener('click', () => openEditor(+b.dataset.edit)));
   rows.querySelectorAll('[data-del]').forEach((b) =>
     b.addEventListener('click', () => deleteSnippet(+b.dataset.del)));
+  rows.querySelectorAll('[data-sel]').forEach((c) =>
+    c.addEventListener('change', () => { if (c.checked) selected.add(c.dataset.sel); else selected.delete(c.dataset.sel); updateBulkBar(shownItems); }));
+  updateBulkBar(shownItems);
+  renderSavings();
+}
+
+function updateBulkBar(shownItems) {
+  const n = selected.size;
+  $('bulkbar').className = 'bulkbar' + (n ? ' on' : '');
+  $('bulk-count').textContent = n + ' selected';
+  const all = $('snip-all');
+  const shownIds = (shownItems || []).map((x) => x.s.id);
+  const picked = shownIds.filter((id) => selected.has(id)).length;
+  all.checked = shownIds.length > 0 && picked === shownIds.length;
+  all.indeterminate = picked > 0 && picked < shownIds.length;
+  all.onchange = () => {
+    for (const id of shownIds) { if (all.checked) selected.add(id); else selected.delete(id); }
+    renderSnippets();
+  };
+}
+
+async function bulkDelete() {
+  const n = selected.size;
+  if (!n) return;
+  if (!window.confirm('Delete ' + n + ' snippet' + (n === 1 ? '' : 's') + '? This also removes ' + (n === 1 ? 'it' : 'them') + ' from your other devices.')) return;
+  const list = (state.personal || []).filter((s) => !selected.has(s.id));
+  selected.clear();
+  await window.api.savePersonal(list);
+  refresh();
 }
 
 function renderTeam() {
@@ -775,6 +871,20 @@ $('btn-publish').addEventListener('click', publish);
 $('btn-import').addEventListener('click', () => $('import-input').click());
 $('btn-export').addEventListener('click', exportCSV);
 if ($('snip-search')) $('snip-search').addEventListener('input', renderSnippets);
+(function initSnippetTools() {
+  const sel = $('snip-sort');
+  try { const v = localStorage.getItem(SORT_KEY); if (v && [...sel.options].some((o) => o.value === v)) sel.value = v; } catch (_) {}
+  sel.addEventListener('change', () => { try { localStorage.setItem(SORT_KEY, sel.value); } catch (_) {} renderSnippets(); });
+  $('bulk-delete').addEventListener('click', bulkDelete);
+  $('bulk-clear').addEventListener('click', () => { selected.clear(); renderSnippets(); });
+  const wpm = $('sv-wpm');
+  wpm.addEventListener('change', async () => {
+    const v = Math.min(200, Math.max(5, Math.round(Number(wpm.value) || 40)));
+    wpm.value = v;
+    await window.api.saveSettings({ typingWpm: v });
+    refresh();
+  });
+})();
 $('import-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
   e.target.value = '';

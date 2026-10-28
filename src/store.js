@@ -435,11 +435,14 @@ class Store {
     const iso = isoAt(Date.now());
     const used = new Set();
     let fixed = 0;
+    const idMap = {};
     const out = list.map((raw) => {
       if (!raw || typeof raw !== 'object') return raw;
       const s = { ...raw };
       if (!s.id || !UUID_RE.test(String(s.id)) || used.has(s.id)) {
-        s.id = genSnippetId();
+        const nid = genSnippetId();
+        if (s.id && !used.has(s.id)) idMap[s.id] = nid;
+        s.id = nid;
         s.updatedAt = iso; // new to the cloud: make sure it wins and is pushed
         fixed++;
       } else if (!s.updatedAt) {
@@ -450,6 +453,7 @@ class Store {
       return s;
     });
     if (fixed) this.backend.set('personalSnippets', out);
+    if (Object.keys(idMap).length) this.rekeyLocalMeta(idMap);
     // A deletion record with a non-uuid id would make the server reject every upload.
     const tombs = this.getSnippetTombstones();
     const goodTombs = tombs.filter((t) => t && UUID_RE.test(String(t.id)));
@@ -469,9 +473,15 @@ class Store {
     let changed = false;
     if (owner && owner !== uid) {
       const iso = isoAt(Date.now());
-      const list = this.getPersonal().map((s) => (s && typeof s === 'object'
-        ? { ...s, id: genSnippetId(), updatedAt: iso } : s));
+      const idMap = {};
+      const list = this.getPersonal().map((s) => {
+        if (!s || typeof s !== 'object') return s;
+        const id = genSnippetId();
+        if (s.id) idMap[s.id] = id;
+        return { ...s, id, updatedAt: iso };
+      });
       this.backend.set('personalSnippets', list);
+      this.rekeyLocalMeta(idMap);
       this.setSnippetTombstones([]);
       changed = true;
     }
@@ -483,6 +493,76 @@ class Store {
   applySyncedPersonal(live, tombstones) {
     this.backend.set('personalSnippets', Array.isArray(live) ? live : []);
     this.setSnippetTombstones(Array.isArray(tombstones) ? tombstones : []);
+  }
+
+  // -- usage & time-saved stats (local to this device; never synced) ---------
+  // Kept apart from the snippet records so sync, ids and conflict handling are
+  // untouched. Keys are snippet ids (or "t:<trigger>" for shared snippets).
+
+  /** Raw usage: { byKey: {key: {count, lastUsedAt}}, totals: {expansions, savedChars, since} } */
+  getUsageStats() {
+    const u = this.backend.get('usageStats', null) || {};
+    return {
+      byKey: u.byKey && typeof u.byKey === 'object' ? u.byKey : {},
+      totals: { expansions: 0, savedChars: 0, typedChars: 0, since: null, ...(u.totals || {}) },
+    };
+  }
+
+  /**
+   * Record one expansion.
+   * @param {string} key        snippet id, or "t:<trigger>"
+   * @param {number} typedChars characters the user actually typed (the trigger)
+   * @param {number} outChars   characters the snippet produced
+   */
+  recordUse(key, typedChars, outChars, now = Date.now()) {
+    const u = this.getUsageStats();
+    const k = String(key || '');
+    if (k) {
+      const prev = u.byKey[k] || { count: 0, lastUsedAt: null };
+      u.byKey[k] = { count: (prev.count || 0) + 1, lastUsedAt: isoAt(now) };
+    }
+    const typed = Math.max(0, Number(typedChars) || 0);
+    const out = Math.max(0, Number(outChars) || 0);
+    u.totals.expansions += 1;
+    u.totals.typedChars += typed;
+    u.totals.savedChars += Math.max(0, out - typed);
+    if (!u.totals.since) u.totals.since = isoAt(now);
+    this.backend.set('usageStats', u);
+    return u;
+  }
+
+  /** Creation times by snippet id (local). Backfilled from updatedAt for older snippets. */
+  getSnippetCreated() {
+    const m = this.backend.get('snippetCreated', null);
+    return m && typeof m === 'object' ? m : {};
+  }
+
+  /** Make sure every live personal snippet has a creation time; returns the map. */
+  ensureSnippetCreated(now = Date.now()) {
+    const m = { ...this.getSnippetCreated() };
+    let changed = false;
+    const live = new Set();
+    for (const sn of this.getPersonal()) {
+      if (!sn || !sn.id) continue;
+      live.add(sn.id);
+      if (!m[sn.id]) { m[sn.id] = sn.createdAt || sn.updatedAt || isoAt(now); changed = true; }
+    }
+    for (const id of Object.keys(m)) if (!live.has(id)) { delete m[id]; changed = true; }
+    if (changed) this.backend.set('snippetCreated', m);
+    return m;
+  }
+
+  /** Carry creation times and usage across an id change (account switch). */
+  rekeyLocalMeta(idMap) {
+    const created = this.getSnippetCreated();
+    const u = this.getUsageStats();
+    const c2 = {}; const b2 = { ...u.byKey };
+    for (const [oldId, val] of Object.entries(created)) c2[idMap[oldId] || oldId] = val;
+    for (const [oldId, newId] of Object.entries(idMap)) {
+      if (b2[oldId]) { b2[newId] = b2[oldId]; delete b2[oldId]; }
+    }
+    this.backend.set('snippetCreated', c2);
+    this.backend.set('usageStats', { ...u, byKey: b2 });
   }
 
   getSnippetTombstones() {
@@ -571,6 +651,7 @@ class Store {
       showSuggestions: true, // live autocomplete popup while typing a trigger
       cloudSubscriptions: [], // library ids (shared with me) to pull on sync
       publishToCloud: false, // auto-publish personal snippets to my cloud library
+      typingWpm: 40, // typing speed used for the time-saved estimate
     });
   }
   setSettings(next) {
