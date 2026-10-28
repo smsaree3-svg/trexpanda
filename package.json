@@ -1,7 +1,7 @@
 {
   "name": "trexpanda",
   "productName": "Trexpanda",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "description": "Trexpanda — Type Less. Do More. Cross-platform text expander with team-shared snippet libraries. Type a short trigger, get a full snippet. Teams keep a shared library everyone syncs to.",
   "author": "Lumisha LLC",
   "license": "UNLICENSED",
@@ -65,8 +65,18 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "category": "public.app-category.productivity",
       "icon": "assets/icon.png",
@@ -74,7 +84,8 @@
       "hardenedRuntime": true,
       "extendInfo": {
         "NSAppleEventsUsageDescription": "Trexpanda needs Accessibility access to detect what you type and to insert snippets."
-      }
+      },
+      "mergeASARs": false
     },
     "linux": {
       "target": [
