@@ -305,6 +305,42 @@ test('combineUsage adds counts across devices and ignores this device\'s stale c
   assert.strictEqual(c.totals.devices, 2);
 });
 
+test('sync never drops an image/file just because the newer copy lacks it (same id or same trigger)', () => {
+  const att = { type: 'image', name: 'a.png', mime: 'image/png', data: 'iVBORw0KGgo=' };
+  const A = '11111111-1111-4111-8111-111111111111';
+  const B = '22222222-2222-4222-8222-222222222222';
+  // Same id: this PC has a newer text-only copy, the cloud has the image.
+  let m = mergeSnippetsForSync({
+    live: [{ id: A, trigger: ';ty', replacement: 'Thanks!', updatedAt: '2026-10-28T10:00:00Z' }],
+    remote: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: att, updated_at: '2026-10-27T10:00:00Z' }],
+  });
+  assert.deepStrictEqual(m.live[0].attachment, att);
+  assert.deepStrictEqual(m.push[0].attachment, att);
+  // Same id: the cloud copy is newer but has no image; this PC has it -> kept and re-pushed.
+  m = mergeSnippetsForSync({
+    live: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: att, updatedAt: '2026-10-27T10:00:00Z' }],
+    remote: [{ id: A, trigger: ';ty', replacement: 'Thanks!!', attachment: null, updated_at: '2026-10-28T10:00:00Z' }],
+  });
+  assert.strictEqual(m.live[0].replacement, 'Thanks!!');
+  assert.deepStrictEqual(m.live[0].attachment, att);
+  assert.strictEqual(m.push.length, 1);
+  // Same trigger, different ids: cloud has the image, this PC's newer copy doesn't.
+  m = mergeSnippetsForSync({
+    live: [{ id: B, trigger: ';TY', replacement: 'Thanks!', updatedAt: '2026-10-28T10:00:00Z' }],
+    remote: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: JSON.stringify(att), updated_at: '2026-10-27T10:00:00Z' }],
+  });
+  assert.strictEqual(m.live.length, 1);
+  assert.strictEqual(m.live[0].id, A);
+  assert.deepStrictEqual(m.live[0].attachment, att);
+  // Removed on purpose in the editor: stays removed.
+  m = mergeSnippetsForSync({
+    live: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachmentCleared: true, updatedAt: '2026-10-28T10:00:00Z' }],
+    remote: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: att, updated_at: '2026-10-27T10:00:00Z' }],
+  });
+  assert.strictEqual(m.live[0].attachment, undefined);
+  assert.strictEqual(m.push[0].attachment, null);
+});
+
 test('safeFileName strips paths and shell characters from shared attachment names', () => {
   const { safeFileName } = require('../src/store');
   assert.strictEqual(safeFileName('..\\..\\Startup\\x.bat'), 'x.bat');

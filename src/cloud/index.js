@@ -184,8 +184,23 @@ class CloudService {
     if (!list.length) return { ok: true, count: 0 };
     const me = await this._uid();
     const payload = list.map((r) => ({ ...r, user_id: me }));
-    const { error } = await client.from('snippets').upsert(payload, { onConflict: 'id' });
-    if (error) throw new Error(error.message || 'Could not push snippets.');
+    // Rows carrying images/files can be ~1.4 MB each: send in small batches so a
+    // library full of attachments never exceeds the server's request size limit
+    // (which used to fail the whole push, leaving attachments on one PC only).
+    const LIMIT = 2 * 1024 * 1024;
+    let batch = []; let size = 0;
+    const flush = async () => {
+      if (!batch.length) return;
+      const { error } = await client.from('snippets').upsert(batch, { onConflict: 'id' });
+      if (error) throw new Error(error.message || 'Could not push snippets.');
+      batch = []; size = 0;
+    };
+    for (const row of payload) {
+      const n = JSON.stringify(row).length;
+      if (batch.length && size + n > LIMIT) await flush();
+      batch.push(row); size += n;
+    }
+    await flush();
     return { ok: true, count: payload.length };
   }
 
