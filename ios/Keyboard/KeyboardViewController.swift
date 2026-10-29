@@ -17,6 +17,27 @@ final class KeyboardViewController: UIInputViewController {
     private var symbols = false
     /// A short message shown in the suggestion bar (e.g. "attachment copied").
     private var notice: String?
+    /// After an image snippet: its text, offered as the photo's caption when the
+    /// keyboard next appears in an empty box (e.g. WhatsApp's photo screen after Paste).
+    private var pendingCaption: (text: String, until: Date)? {
+        get {
+            guard let u = Self.captionURL, let d = try? Data(contentsOf: u),
+                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+                  let t = o["text"] as? String, let until = o["until"] as? Double else { return nil }
+            return (t, Date(timeIntervalSince1970: until))
+        }
+        set {
+            guard let u = Self.captionURL else { return }
+            if let v = newValue, let d = try? JSONSerialization.data(withJSONObject: ["text": v.text, "until": v.until.timeIntervalSince1970]) {
+                try? d.write(to: u, options: .atomic)
+            } else { try? FileManager.default.removeItem(at: u) }
+        }
+    }
+    /// Kept in the shared container: the photo screen can open a fresh keyboard instance.
+    private static var captionURL: URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SharedStore.appGroup)?
+            .appendingPathComponent("pending-caption.json")
+    }
     /// Optional button shown with the notice (e.g. "Send PDF" for a file attachment).
     private var noticeAction: (title: String, run: () -> Void)?
 
@@ -78,6 +99,7 @@ final class KeyboardViewController: UIInputViewController {
         // Reload every time the keyboard appears, so edits in the app apply at once.
         loadedSnippets = SharedStore.loadSnippets().filter { $0.enabled && !$0.isDeleted }
         engine.setSnippets(loadedSnippets)
+        offerCaptionIfEmptyField()
         symbols = false; moreSymbols = false; capsLock = false
         shifted = shouldAutoCapitalize()
         rebuildKeys()
@@ -87,7 +109,27 @@ final class KeyboardViewController: UIInputViewController {
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
         updateAutoShift()
+        offerCaptionIfEmptyField()
         refreshSuggestions()
+    }
+
+    /// iOS keyboards can't insert photos, so an image snippet works in two taps:
+    /// Paste (WhatsApp opens its photo screen), then "Add text" puts the snippet's
+    /// text in the caption, the same result Android gives in one step.
+    private func offerCaptionIfEmptyField() {
+        guard let pc = pendingCaption else { return }
+        if Date() > pc.until { pendingCaption = nil; return }
+        let before = textDocumentProxy.documentContextBeforeInput ?? ""
+        let after = textDocumentProxy.documentContextAfterInput ?? ""
+        guard before.isEmpty && after.isEmpty else { return }
+        notice = "Add the snippet's text as the caption"
+        noticeAction = ("Add text", { [weak self] in
+            guard let self else { return }
+            self.textDocumentProxy.insertText(pc.text)
+            self.pendingCaption = nil
+            self.notice = nil; self.noticeAction = nil
+            self.refreshSuggestions()
+        })
     }
 
     // MARK: Typing
@@ -115,6 +157,7 @@ final class KeyboardViewController: UIInputViewController {
         if action.caretBack > 0 { textDocumentProxy.adjustTextPosition(byCharacterOffset: -action.caretBack) }
         UIDevice.current.playInputClick()
         recordUse(action, typed: action.backspaces)
+        lastExpandedText = action.replacement
         if let att = action.attachment { copyAttachment(att, trigger: action.trigger) }
     }
 
@@ -136,6 +179,7 @@ final class KeyboardViewController: UIInputViewController {
             (trigger.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""))
         if att.isImage, let image = UIImage(data: data) {
             UIPasteboard.general.image = image
+            if !lastExpandedText.isEmpty { pendingCaption = (lastExpandedText, Date().addingTimeInterval(180)) }
             notice = "📎 Image copied. Tap the text box and choose Paste"
         } else {
             let provider = NSItemProvider(item: data as NSData, typeIdentifier: type.identifier)
@@ -226,6 +270,7 @@ final class KeyboardViewController: UIInputViewController {
         lastSuggestionTyped = 0
     }
     private var lastSuggestionTyped = 0
+    private var lastExpandedText = ""
 
     private func useSuggestion(_ trigger: String) {
         // Remove the partial token the user typed, then insert the snippet.
