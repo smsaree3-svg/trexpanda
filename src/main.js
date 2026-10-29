@@ -307,30 +307,31 @@ async function onKeyDown(e) {
  */
 async function expandAttachment(action) {
   const att = action.attachment;
-  // Snapshot ALL clipboard flavors once and restore after (overlap-safe); the
-  // old code saved only text and restored on a bare timer outside try/finally,
-  // so an error left the replacement/path stranded on the user's clipboard.
+  // Snapshot ALL clipboard flavors once and restore after (overlap-safe).
   inject.beginExpansion(clipboard);
   try {
     // Delete the typed trigger first.
     await inject.pressBackspaces(action.backspaces);
+    await delay(40);
 
-    // If the snippet also has text, paste that first.
-    if (action.replacement) {
-      clipboard.writeText(action.replacement);
-      await delay(20);
-      await inject.paste();
-      await delay(60);
-    }
-
+    // The image/file goes FIRST, then the text. Chat apps (WhatsApp, Slack,
+    // Teams, Telegram) open a preview with a caption box when an image or file
+    // is pasted, so the text then lands as its caption — the same result the
+    // phone apps give. Everywhere else the text simply follows the image.
+    //
+    // Each paste gets time for the target app to actually READ the clipboard
+    // before it is replaced: apps consume Cmd/Ctrl+V asynchronously, and the old
+    // 60 ms gap meant the image overwrote the text before it was pasted, so the
+    // text (or part of it) went missing.
     const buffer = Buffer.from(att.data, 'base64');
-
+    let pastedAttachment = false;
     if (att.type === 'image') {
       const img = nativeImage.createFromBuffer(buffer);
       if (!img.isEmpty()) {
         clipboard.writeImage(img);
-        await delay(30);
+        await delay(60);
         await inject.paste();
+        pastedAttachment = true;
       }
     } else {
       // Write to a stable temp path and copy the FILE to the clipboard.
@@ -341,19 +342,28 @@ async function expandAttachment(action) {
       fs.writeFileSync(filePath, buffer);
       const copied = await copyFileToClipboard(filePath);
       if (copied) {
-        await delay(60);
+        await delay(80);
         await inject.paste();
+        pastedAttachment = true;
       } else {
         // Fallback: paste the file path as text so the user still gets something.
         clipboard.writeText(filePath);
-        await delay(20);
+        await delay(40);
         await inject.paste();
+        await delay(400);
       }
     }
+
+    if (action.replacement) {
+      // Let the app take the image/file and open its preview/caption box.
+      if (pastedAttachment) await delay(900);
+      clipboard.writeText(action.replacement);
+      await delay(60);
+      await inject.paste();
+    }
   } finally {
-    // Restore the user's previous clipboard shortly after (longer settle for the
-    // file/image paste path).
-    inject.endExpansion(clipboard, 300);
+    // Restore the user's previous clipboard only once the last paste has been read.
+    inject.endExpansion(clipboard, 600);
   }
 }
 
