@@ -189,7 +189,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         if let shareURL {
             let kind = att.isImage ? "image" : (ext.isEmpty ? "file" : ext.uppercased())
-            noticeAction = ("Send \(kind)", { [weak self] in self?.openContainingApp(shareURL) })
+            noticeAction = ("Send \(kind) + text", { [weak self] in self?.openContainingApp(shareURL) })
         }
     }
 

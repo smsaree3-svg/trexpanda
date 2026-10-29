@@ -46,6 +46,9 @@ final class AppModel: ObservableObject {
     struct ShareFile: Identifiable {
         let id = UUID()
         let url: URL
+        /// The snippet's text, shared with the file so WhatsApp & co. use it as the caption.
+        var text: String? = nil
+        var items: [Any] { [url] + (text.map { [$0] } ?? []) }
     }
 
     /// Handle trexpanda://share?trigger=<trigger> sent by the keyboard.
@@ -66,7 +69,8 @@ final class AppModel: ObservableObject {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent(att.name)
         do { try data.write(to: file) } catch { return }
-        shareFile = ShareFile(url: file)
+        let text = snippet.replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        shareFile = ShareFile(url: file, text: text.isEmpty ? nil : snippet.replacement)
     }
 
     // MARK: Editing

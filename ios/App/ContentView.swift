@@ -73,7 +73,7 @@ struct ContentView: View {
                 SnippetEditView(snippet: s) { model.save($0) }
             }
             .sheet(isPresented: $showKeyboardHelp) { KeyboardSetupView() }
-            .sheet(item: $model.shareFile) { f in ShareSheet(items: [f.url]).ignoresSafeArea() }
+            .sheet(item: $model.shareFile) { f in ShareSheet(items: f.items).ignoresSafeArea() }
             .sheet(isPresented: $showAccount) { AccountView() }
             .onAppear {
                 // Store screenshots (simulator only): open a given screen at launch.
