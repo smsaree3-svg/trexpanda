@@ -194,7 +194,7 @@ function renderStatus() {
   if (e.macAccessibility === false) problems.push('Trexpanda needs Accessibility permission to expand snippets on this Mac. Open System Settings → Privacy &amp; Security → Accessibility and switch <b>Trexpanda</b> on (if it is already on, remove it with − and add it again). Expansion starts automatically once allowed. <button class="btn small" id="openAxBtn">Open Accessibility settings</button>');
   if (!e.hookAvailable) problems.push(`Global keyboard capture is unavailable${e.hookError ? ' (' + e.hookError + ')' : ''}. On macOS, grant Accessibility permission in System Settings → Privacy & Security → Accessibility, then reopen.`);
   if (!e.injectionAvailable) problems.push(`Keystroke injection is unavailable${e.injectionError ? ' (' + e.injectionError + ')' : ''}. Snippets can be managed but won't expand until this is resolved.`);
-  if (e.cloudConfigured === false) problems.push('Cloud is not configured in this build, so sign-in, your free trial, and expansion are all unavailable. This usually means the build is missing its Supabase settings (SUPABASE_URL / SUPABASE_ANON_KEY).');
+  if (e.cloudConfigured === false) problems.push('Trexpanda can\'t reach its online service, so sign-in, your free trial, and expansion are unavailable. Please download the latest version from trexpanda.com or contact hello@trexpanda.com.');
   if (problems.length) {
     banner.className = 'banner';
     banner.innerHTML = problems.map((p) => '<div>⚠️ ' + p + '</div>').join('');
@@ -848,7 +848,7 @@ async function grantUser(id, days) {
 async function revokeUser(id) {
   const res = await cc('adminRevokeUser', id);
   if (!res.ok || (res.data && res.data.ok === false)) { adminMsg((res.data && res.data.error) || res.error || 'Failed.', 'bad'); return; }
-  adminMsg('Revoked coupon/comp access (Stripe subs are unaffected).', 'ok');
+  adminMsg('Revoked coupon/comp access (paid subscriptions are unaffected).', 'ok');
   loadAdmin();
 }
 
@@ -990,7 +990,7 @@ function renderCloud() {
   const acct = $('account-panel');
   if (!s.configured) {
     un.style.display = 'block';
-    un.textContent = "⚠️ Cloud sharing isn't set up in this build. " + (s.reason || '') + ' See CLOUD_SETUP.md to connect a Supabase project.';
+    un.textContent = "⚠️ Sign-in and sharing are unavailable in this copy of Trexpanda. Please download the latest version from trexpanda.com.";
     auth.style.display = 'none'; acct.style.display = 'none';
     return;
   }

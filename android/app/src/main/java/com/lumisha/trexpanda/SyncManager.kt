@@ -61,7 +61,7 @@ class SyncManager(
                 done?.onResult(true, "Synced (${merged.live.size} snippets).")
             } catch (e: Exception) {
                 Log.w(TAG, "sync failed", e)
-                done?.onResult(false, e.message ?: "Sync failed.")
+                done?.onResult(false, if (e.message == "Not signed in.") "Sign in to sync." else "Sync failed. Check your connection and try again.")
             } finally {
                 running.set(false)
             }

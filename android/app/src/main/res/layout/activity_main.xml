@@ -208,7 +208,7 @@
                     android:textAllCaps="false"
                     android:textSize="12.5sp"
                     android:textColor="@color/accent"
-                    android:text="Add your Supabase cloud key" />
+                    android:text="Connect to Trexpanda cloud" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/deleteAccountButton"

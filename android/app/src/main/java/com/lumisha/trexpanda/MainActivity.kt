@@ -98,7 +98,7 @@ class MainActivity : AppCompatActivity() {
 
         signInButton.setOnClickListener {
             if (!SupabaseConfig.isConfigured()) {
-                toast("Add your Supabase anon key first.")
+                toast("Connect to the Trexpanda cloud first.")
                 showCloudSettingsDialog()
             } else {
                 auth.startGoogleSignIn()
@@ -348,7 +348,7 @@ class MainActivity : AppCompatActivity() {
             setSingleLine()
         }
         val keyInput = EditText(this).apply {
-            hint = "Supabase anon public key"
+            hint = "Cloud access key"
             setText(SupabaseConfig.currentAnonKey())
         }
         container.addView(urlInput)
@@ -356,7 +356,7 @@ class MainActivity : AppCompatActivity() {
 
         AlertDialog.Builder(this)
             .setTitle("Cloud settings")
-            .setMessage("Paste your Supabase anon (public) key to enable sign-in and cross-device sync. Find it in the Supabase dashboard under Project Settings, API.")
+            .setMessage("Paste the Trexpanda cloud access key to enable sign-in and cross-device sync.")
             .setView(container)
             .setPositiveButton("Save") { _, _ ->
                 SupabaseConfig.save(this, urlInput.text.toString(), keyInput.text.toString())
