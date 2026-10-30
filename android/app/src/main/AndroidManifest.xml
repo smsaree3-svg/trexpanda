@@ -61,6 +61,12 @@
                 android:resource="@xml/accessibility_config" />
         </service>
 
+        <!-- Usage counts from any-keyboard mode (other process) go through here. -->
+        <provider
+            android:name=".UsageProvider"
+            android:authorities="${applicationId}.usage"
+            android:exported="false" />
+
         <!-- Shares a snippet's image/file with the app being typed in. -->
         <provider
             android:name="androidx.core.content.FileProvider"

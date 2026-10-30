@@ -141,6 +141,14 @@ class MainActivity : AppCompatActivity() {
         realtime.stop()
     }
 
+    override fun onDestroy() {
+        // Each activity instance (e.g. after a rotation) owns these worker threads
+        // and HTTP clients; release them or every rotation leaks another set.
+        realtime.close()
+        sync.close()
+        super.onDestroy()
+    }
+
     private fun handleAuthRedirect(intent: Intent?) {
         val data = intent?.data ?: return
         if (data.scheme == "trexpanda") {

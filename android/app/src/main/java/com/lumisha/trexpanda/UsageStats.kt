@@ -69,7 +69,7 @@ object UsageStats {
     /** Record an expansion of [trigger], keyed by the matching personal snippet's id. */
     fun recordTrigger(c: Context, trigger: String, typedChars: Int, outChars: Int) {
         val id = try {
-            SnippetStore(c).getPersonal().firstOrNull { it.trigger.equals(trigger, ignoreCase = true) }?.id
+            SnippetStore.peekPersonal(c).firstOrNull { it.trigger.equals(trigger, ignoreCase = true) }?.id
         } catch (_: Exception) { null }
         record(c, if (!id.isNullOrEmpty()) id else "t:$trigger", typedChars, outChars)
     }

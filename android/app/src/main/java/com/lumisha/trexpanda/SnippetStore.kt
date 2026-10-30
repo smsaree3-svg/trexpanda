@@ -17,16 +17,26 @@ class SnippetStore(context: Context) {
 
     private val file: File = File(context.filesDir, FILE_NAME)
     private val atomic = AtomicFile(file)
-    private val lock = Any()
 
-    private var live: MutableList<Snippet> = mutableListOf()
-    private var tombstones: MutableList<Tombstone> = mutableListOf()
+    // The in-memory copy and its lock are shared by every SnippetStore in this
+    // process (activity, sync thread, keyboard, usage stats). Per-instance copies
+    // let a stale instance (e.g. an old activity's sync after a rotation) write
+    // its outdated list over newer edits, and per-instance locks didn't stop two
+    // instances writing the file at the same time.
+    private val lock get() = LOCK
+    private var live: MutableList<Snippet>
+        get() = sharedLive
+        set(v) { sharedLive = v }
+    private var tombstones: MutableList<Tombstone>
+        get() = sharedTombstones
+        set(v) { sharedTombstones = v }
 
     init {
         load()
     }
 
     private fun load() = synchronized(lock) {
+        loaded = true
         live = mutableListOf()
         tombstones = mutableListOf()
         if (!file.exists()) return@synchronized
@@ -92,7 +102,34 @@ class SnippetStore(context: Context) {
         persist()
     }
 
+    /**
+     * Merge [remote] into the CURRENT local state and save, atomically: an edit
+     * saved from the UI while a sync is running can't be overwritten by a merge
+     * computed from the list as it was a moment earlier.
+     */
+    fun mergeRemote(remote: List<Snippet>): SyncMerge.Result = synchronized(lock) {
+        val merged = SyncMerge.merge(live = live.toList(), tombstones = tombstones.toList(), remote = remote)
+        live = merged.live.toMutableList()
+        tombstones = merged.tombstones.toMutableList()
+        persist()
+        merged
+    }
+
     companion object {
         private const val FILE_NAME = "snippets.json"
+
+        private val LOCK = Any()
+        private var sharedLive: MutableList<Snippet> = mutableListOf()
+        private var sharedTombstones: MutableList<Tombstone> = mutableListOf()
+        private var loaded = false
+
+        /**
+         * The live snippets without re-reading the file when this process already
+         * has them (cheap enough to call on every expansion).
+         */
+        fun peekPersonal(context: Context): List<Snippet> = synchronized(LOCK) {
+            if (!loaded) return@synchronized SnippetStore(context).getPersonal()
+            sharedLive.toList()
+        }
     }
 }

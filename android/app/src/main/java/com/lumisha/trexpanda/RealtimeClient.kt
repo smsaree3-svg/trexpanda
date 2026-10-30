@@ -65,9 +65,16 @@ class RealtimeClient(
         ws = null
     }
 
+    /** Stop for good and release the worker thread (owner destroyed). */
+    fun close() {
+        stop()
+        io.shutdown()
+    }
+
     private fun connect() {
         if (!active) return
         // Token refresh is a network call: never on the main thread.
+        if (io.isShutdown) return
         io.execute {
             if (!active) return@execute
             val token = auth.freshAccessToken()
@@ -105,7 +112,9 @@ class RealtimeClient(
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
             if (webSocket !== ws) { webSocket.cancel(); return } // a stale socket
-            reconnectDelayMs = 2000L
+            // The back-off is reset only once the channel join is accepted (see
+            // phx_reply): a server that accepts the socket but rejects the channel
+            // would otherwise get a reconnect + full sync every 2 seconds forever.
             val uid = auth.userId ?: return
             val changes = org.json.JSONArray().put(
                 JSONObject()
@@ -126,9 +135,20 @@ class RealtimeClient(
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             try {
-                val event = JSONObject(text).optString("event")
+                val msg = JSONObject(text)
+                val event = msg.optString("event")
                 when (event) {
-                    "phx_reply" -> joined = true
+                    "phx_reply" -> if (msg.optString("topic") == topic) {
+                        val status = msg.optJSONObject("payload")?.optString("status")
+                        if (status == "ok") {
+                            joined = true
+                            main.post { reconnectDelayMs = 2000L }
+                        } else if (webSocket === ws) {
+                            // Join refused (e.g. expired token): reconnect with a fresh one.
+                            webSocket.cancel()
+                            main.post { scheduleReconnect() }
+                        }
+                    }
                     "postgres_changes" -> if (webSocket === ws) onChange()
                     "phx_error", "phx_close" -> if (webSocket === ws) {
                         webSocket.cancel()
@@ -141,6 +161,12 @@ class RealtimeClient(
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             Log.w(TAG, "realtime failure", t)
             if (webSocket === ws) main.post { scheduleReconnect() }
+        }
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            // The server is closing: finish the handshake so onClosed fires and we
+            // reconnect, instead of sitting on a half-closed socket.
+            webSocket.close(1000, null)
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {

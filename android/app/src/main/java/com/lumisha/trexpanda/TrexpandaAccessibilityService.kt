@@ -40,6 +40,8 @@ class TrexpandaAccessibilityService : AccessibilityService() {
     private var chips: LinearLayout? = null
     private var stripShown = false
 
+    private val usageIo = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         SupabaseConfig.load(this)
@@ -93,7 +95,14 @@ class TrexpandaAccessibilityService : AccessibilityService() {
     private fun recordUse(edit: AnyKeyboardExpander.Edit, before: String) {
         val typed = edit.trigger.length
         val added = (edit.text.length - before.length).coerceAtLeast(0)
-        UsageStats.recordTrigger(this, edit.trigger, typed, typed + added)
+        // This service runs in its own process; usage is kept in the main
+        // process's SharedPreferences, which can't be written safely from here.
+        val ctx = applicationContext
+        try {
+            usageIo.execute {
+                try { UsageProvider.record(ctx, edit.trigger, typed, typed + added) } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
     }
 
     private fun apply(node: AccessibilityNodeInfo, edit: AnyKeyboardExpander.Edit): Boolean {
@@ -263,7 +272,7 @@ class TrexpandaAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() { hideStrip() }
 
-    override fun onDestroy() { hideStrip(); super.onDestroy() }
+    override fun onDestroy() { hideStrip(); usageIo.shutdown(); super.onDestroy() }
 
     /** True when the Trexpanda keyboard is the current input method (it expands itself). */
     private fun trexpandaKeyboardActive(): Boolean {

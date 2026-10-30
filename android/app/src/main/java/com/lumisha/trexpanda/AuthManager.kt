@@ -92,11 +92,17 @@ class AuthManager(private val context: Context) {
     }
 
     /** A valid access token, refreshing first if it is near expiry. Null if signed out. */
-    @Synchronized
-    fun freshAccessToken(): String? {
-        if (!isSignedIn) return null
-        if (System.currentTimeMillis() < expiresAt - 60_000) return accessToken
-        return if (refresh()) accessToken else null
+    fun freshAccessToken(): String? = synchronized(REFRESH_LOCK) {
+        // One lock for the whole process, not per instance: the sync thread, the
+        // realtime client and a recreated activity each hold their own
+        // AuthManager, and two of them refreshing at once spend the same
+        // single-use refresh token, which can end in a 400 and a forced sign-out.
+        when {
+            !isSignedIn -> null
+            System.currentTimeMillis() < expiresAt - 60_000 -> accessToken
+            refresh() -> accessToken
+            else -> null
+        }
     }
 
     private fun refresh(): Boolean {
@@ -160,6 +166,7 @@ class AuthManager(private val context: Context) {
     }
 
     companion object {
+        private val REFRESH_LOCK = Any()
         private val JSON = "application/json".toMediaType()
         private const val KEY_ACCESS = "access_token"
         private const val KEY_REFRESH = "refresh_token"
