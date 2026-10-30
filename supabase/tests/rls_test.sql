@@ -267,4 +267,20 @@ begin
   raise notice 'BILLING ok: is_paid(uuid)/is_admin(uuid) not callable by anon or authenticated';
 end $$;
 
+-- An abandoned checkout (placeholder row: 'incomplete', no subscription id) must not block deletion.
+insert into auth.users(id, email, email_confirmed_at)
+  values ('00000000-0000-0000-0000-0000000000d3','browser@example.test', now());
+insert into public.subscriptions(user_id, stripe_customer_id, status)
+  values ('00000000-0000-0000-0000-0000000000d3','cus_test','incomplete');
+begin;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-0000000000d3',true);
+set local role authenticated;
+do $$ begin
+  if (public.delete_my_account() ->> 'ok') is distinct from 'true' then
+    raise exception 'DELETE FAIL: abandoned checkout blocked account deletion';
+  end if;
+  raise notice 'DELETE ok: abandoned checkout does not block deletion';
+end $$;
+commit;
+
 select 'ALL RLS TESTS PASSED' as result;

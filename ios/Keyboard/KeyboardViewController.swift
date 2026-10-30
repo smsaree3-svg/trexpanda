@@ -154,7 +154,12 @@ final class KeyboardViewController: UIInputViewController {
     private func apply(_ action: ExpanderEngine.Action) {
         for _ in 0..<action.backspaces { textDocumentProxy.deleteBackward() }
         textDocumentProxy.insertText(action.replacement)
-        if action.caretBack > 0 { textDocumentProxy.adjustTextPosition(byCharacterOffset: -action.caretBack) }
+        if action.caretBack > 0 {
+            // The proxy's offset counts UTF-16 units, not Characters (an emoji after
+            // `$|` would otherwise leave the caret in the wrong place).
+            let tail = action.replacement.suffix(action.caretBack)
+            textDocumentProxy.adjustTextPosition(byCharacterOffset: -tail.utf16.count)
+        }
         UIDevice.current.playInputClick()
         recordUse(action, typed: action.backspaces)
         lastExpandedText = action.replacement

@@ -47,10 +47,14 @@ Deno.serve(async (req) => {
     let customerId: string | null = null;
     const { data: existing } = await admin
       .from('subscriptions')
-      .select('stripe_customer_id')
+      .select('stripe_customer_id, status')
       .eq('user_id', user.id)
       .maybeSingle();
     customerId = existing?.stripe_customer_id ?? null;
+    // Already subscribed: a second checkout would bill them twice.
+    if (['active', 'trialing', 'past_due'].includes(existing?.status ?? '')) {
+      return json({ error: 'You already have Trexpanda Pro. Use Manage billing to change it.' }, 409);
+    }
 
     if (!customerId) {
       const customer = await stripe.customers.create({

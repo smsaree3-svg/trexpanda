@@ -38,6 +38,8 @@ const admin = createClient(
 const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? '';
 
 Deno.serve(async (req) => {
+  // Never verify against an empty secret (anyone could sign with it).
+  if (!webhookSecret) return new Response('Webhook secret is not configured.', { status: 500 });
   const signature = req.headers.get('stripe-signature');
   const body = await req.text();
 
@@ -107,6 +109,20 @@ async function upsertSubscription(sub: Stripe.Subscription): Promise<void> {
     // `return` here would 200 the event and permanently drop the subscription.
     console.error('No supabase_user_id for subscription', sub.id, 'customer', sub.customer);
     throw new Error(`Unresolved user for subscription ${sub.id} (customer ${sub.customer})`);
+  }
+
+  // One row per user: an event for an OLD (ended) subscription must not
+  // overwrite the row of the user's current, still-paying subscription.
+  const paying = ['active', 'trialing', 'past_due'];
+  const { data: current, error: readErr } = await admin
+    .from('subscriptions')
+    .select('stripe_subscription_id, status')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (readErr) throw readErr;
+  if (current?.stripe_subscription_id && current.stripe_subscription_id !== sub.id &&
+      paying.includes(current.status) && !paying.includes(sub.status)) {
+    return;
   }
 
   const priceId = sub.items?.data?.[0]?.price?.id ?? null;

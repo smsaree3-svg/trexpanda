@@ -54,7 +54,9 @@ final class AuthService: NSObject, ObservableObject {
         let callback: URL = try await withCheckedThrowingContinuation { cont in
             let session = ASWebAuthenticationSession(url: comps.url!, callbackURLScheme: AppConfig.callbackScheme) { url, error in
                 if let url { cont.resume(returning: url) }
-                else { cont.resume(throwing: error ?? AuthError.cancelled) }
+                else if let error, (error as? ASWebAuthenticationSessionError)?.code != .canceledLogin {
+                    cont.resume(throwing: error)
+                } else { cont.resume(throwing: AuthError.cancelled) } // closed the sheet: not an error
             }
             session.presentationContextProvider = self
             session.prefersEphemeralWebBrowserSession = false
@@ -80,6 +82,7 @@ final class AuthService: NSObject, ObservableObject {
         controller.delegate = self
         controller.presentationContextProvider = self
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            appleContinuation?.resume(throwing: AuthError.cancelled) // a second tap: don't strand the first
             appleContinuation = cont
             controller.performRequests()
         }
@@ -106,6 +109,7 @@ final class AuthService: NSObject, ObservableObject {
         controller.delegate = self
         controller.presentationContextProvider = self
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
+            appleCodeContinuation?.resume(throwing: AuthError.cancelled)
             appleCodeContinuation = cont
             controller.performRequests()
         }
@@ -136,19 +140,31 @@ final class AuthService: NSObject, ObservableObject {
     func freshAccessToken() async -> String? {
         guard isSignedIn else { return nil }
         if Date() < expiresAt.addingTimeInterval(-60), let accessToken { return accessToken }
+        // Refresh tokens are single-use: concurrent callers share one refresh.
+        if let refreshTask { return await refreshTask.value }
         guard let refreshToken else { return nil }
-        do {
-            let json = try await post(AppConfig.authURL("token?grant_type=refresh_token"),
-                                      body: ["refresh_token": refreshToken])
-            try store(json)
-            return accessToken
-        } catch AuthError.rejected {
-            signOut() // revoked or expired session: show "signed out", not a broken sync
-            return nil
-        } catch {
-            return nil // offline etc.: keep the session and try again later
+        let task = Task { () async -> String? in
+            do {
+                let json = try await self.post(AppConfig.authURL("token?grant_type=refresh_token"),
+                                               body: ["refresh_token": refreshToken])
+                // Signed out (or into another account) meanwhile: don't bring the old session back.
+                guard self.refreshToken == refreshToken else { return self.accessToken }
+                try self.store(json)
+                return self.accessToken
+            } catch AuthError.rejected {
+                // revoked or expired session: show "signed out", not a broken sync
+                if self.refreshToken == refreshToken { self.signOut() }
+                return nil
+            } catch {
+                return nil // offline etc.: keep the session and try again later
+            }
         }
+        refreshTask = task
+        let token = await task.value
+        refreshTask = nil
+        return token
     }
+    private var refreshTask: Task<String?, Never>?
 
     func signOut() {
         accessToken = nil; refreshToken = nil; userId = nil; email = nil

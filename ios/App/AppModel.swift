@@ -117,10 +117,18 @@ final class AppModel: ObservableObject {
         status = nil
     }
 
+    /// An edit arrived while a sync was running: sync again when it finishes, so
+    /// the edit reaches the cloud now rather than on the next app launch.
+    private var syncAgain = false
+
     func sync() async {
-        guard auth.isSignedIn, !isSyncing else { return }
+        guard auth.isSignedIn else { return }
+        guard !isSyncing else { syncAgain = true; return }
         isSyncing = true
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            if syncAgain { syncAgain = false; Task { await sync() } }
+        }
         do {
             adoptLocalSnippetsIfAccountChanged()
             let remote = try await api.pullSnippets()
