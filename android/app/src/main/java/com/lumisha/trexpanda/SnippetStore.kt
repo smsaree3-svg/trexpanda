@@ -27,7 +27,7 @@ class SnippetStore(context: Context) {
     private var live: MutableList<Snippet>
         get() = sharedLive
         set(v) { sharedLive = v }
-    private var tombstones: MutableList<Tombstone>
+    private var tombs: MutableList<Tombstone>
         get() = sharedTombstones
         set(v) { sharedTombstones = v }
 
@@ -38,27 +38,27 @@ class SnippetStore(context: Context) {
     private fun load() = synchronized(lock) {
         loaded = true
         live = mutableListOf()
-        tombstones = mutableListOf()
+        tombs = mutableListOf()
         if (!file.exists()) return@synchronized
         try {
             val root = JSONObject(String(atomic.readFully(), Charsets.UTF_8))
             live = SnippetJson.snippetsFromLocalArray(root.optJSONArray("live") ?: org.json.JSONArray())
                 .toMutableList()
             val now = System.currentTimeMillis()
-            tombstones = SnippetJson.tombstonesFromArray(root.optJSONArray("tombstones") ?: org.json.JSONArray())
+            tombs = SnippetJson.tombstonesFromArray(root.optJSONArray("tombstones") ?: org.json.JSONArray())
                 .filter { now - it.deletedAt <= SyncMerge.TOMBSTONE_TTL_MS }
                 .toMutableList()
         } catch (_: Exception) {
             // Corrupt file: start clean rather than crash the keyboard.
             live = mutableListOf()
-            tombstones = mutableListOf()
+            tombs = mutableListOf()
         }
     }
 
     private fun persist() = synchronized(lock) {
         val root = JSONObject().apply {
             put("live", SnippetJson.snippetsToLocalArray(live))
-            put("tombstones", SnippetJson.tombstonesToArray(tombstones))
+            put("tombstones", SnippetJson.tombstonesToArray(tombs))
         }
         // Atomic: readers (keyboard, any-keyboard mode) never see a half-written
         // file, and a crash mid-write can't wipe the user's snippets.
@@ -75,30 +75,30 @@ class SnippetStore(context: Context) {
     /** Forget all local snippets (used when a different account signs in). */
     fun clearAll() = synchronized(lock) {
         live = mutableListOf()
-        tombstones = mutableListOf()
+        tombs = mutableListOf()
         persist()
     }
 
     /** The current live snippets (what the keyboard expands and the UI lists). */
     fun getPersonal(): List<Snippet> = synchronized(lock) { live.toList() }
 
-    fun getTombstones(): List<Tombstone> = synchronized(lock) { tombstones.toList() }
+    fun getTombstones(): List<Tombstone> = synchronized(lock) { tombs.toList() }
 
     /**
      * Save the snippet list coming from the UI. Assigns ids to new snippets,
      * only bumps `updatedAt` when content changed, and tombstones removals.
      */
     fun setPersonal(incoming: List<Snippet>) = synchronized(lock) {
-        val out = SnippetReconcile.reconcile(live, tombstones, incoming)
+        val out = SnippetReconcile.reconcile(live, tombs, incoming)
         live = out.live.toMutableList()
-        tombstones = out.tombstones.toMutableList()
+        tombs = out.tombstones.toMutableList()
         persist()
     }
 
     /** Apply the result of a cloud sync merge. */
     fun applySynced(newLive: List<Snippet>, newTombstones: List<Tombstone>) = synchronized(lock) {
         live = newLive.toMutableList()
-        tombstones = newTombstones.toMutableList()
+        tombs = newTombstones.toMutableList()
         persist()
     }
 
@@ -108,9 +108,9 @@ class SnippetStore(context: Context) {
      * computed from the list as it was a moment earlier.
      */
     fun mergeRemote(remote: List<Snippet>): SyncMerge.Result = synchronized(lock) {
-        val merged = SyncMerge.merge(live = live.toList(), tombstones = tombstones.toList(), remote = remote)
+        val merged = SyncMerge.merge(live = live.toList(), tombstones = tombs.toList(), remote = remote)
         live = merged.live.toMutableList()
-        tombstones = merged.tombstones.toMutableList()
+        tombs = merged.tombstones.toMutableList()
         persist()
         merged
     }
