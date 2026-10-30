@@ -7,8 +7,8 @@ const os = require('os');
 const { exec } = require('child_process');
 
 const { Expander } = require('./expander');
-const { Store, mergeSnippetsForSync, combineUsage, safeFileName, genSnippetId } = require('./store');
-const { charFor, K, CAPS_LOCK } = require('./keymap');
+const { Store, mergeSnippetsForSync, combineUsage, safeFileName, genSnippetId, addsNewSnippets } = require('./store');
+const { charFor, isShortcutChord, K, CAPS_LOCK } = require('./keymap');
 const inject = require('./inject');
 const { fetchTeamLibrary, writeTeamLibrary } = require('./sync');
 const { CloudService } = require('./cloud');
@@ -213,7 +213,15 @@ function startHook() {
 function onMouseDown(e) {
   if (suggestWin && !suggestWin.isDestroyed() && suggestWin.isVisible()) {
     const b = suggestWin.getBounds();
-    if (e && e.x >= b.x && e.x <= b.x + b.width && e.y >= b.y && e.y <= b.y + b.height) {
+    // uiohook reports PHYSICAL pixels on Windows, while window bounds are in DIPs.
+    // Without converting, on a scaled display (125%/150%) a click on the popup
+    // looked like a click elsewhere: the buffer was reset before the pick, so
+    // the typed partial trigger was never deleted.
+    let p = e ? { x: e.x, y: e.y } : null;
+    if (p && process.platform === 'win32' && typeof screen.screenToDipPoint === 'function') {
+      try { p = screen.screenToDipPoint(p); } catch (_) {}
+    }
+    if (p && p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height) {
       return; // inside the popup — let the click become a selection
     }
   }
@@ -256,6 +264,11 @@ async function onKeyDown(e) {
   // only when signed out or the day's free allowance is spent.
   const plan = currentPlan();
   if (!plan.hasAccess) return;
+
+  // Ctrl/Alt/Cmd chords are shortcuts, not typing (Ctrl+C, Cmd+V, Ctrl+Backspace
+  // deletes a word...). Feeding them to the engine let shortcuts "type" a
+  // trigger and fire an expansion; treat them as a context break instead.
+  if (isShortcutChord(e)) { expander.reset(); hideSuggest(); return; }
 
   // Keys that break/adjust the typing context.
   if (e.keycode === K.Backspace) { expander.onBackspace(); refreshSuggestions(settings); return; }
@@ -735,6 +748,9 @@ function installUpdateNow() {
     autoUpdater.quitAndInstall(true, true); // silent install, then reopen Trexpanda
   } catch (err) {
     console.error('Update install failed:', err);
+    // The hook was stopped for the install; if it didn't happen, turn expansion
+    // back on instead of leaving it silently dead (the idle timer retries).
+    reconcileHook();
   }
 }
 
@@ -809,15 +825,16 @@ function registerIpc() {
   }));
 
   ipcMain.handle('save-personal', (_e, list) => {
-    const next = Array.isArray(list) ? list : [];
+    // Only plain objects with a string trigger are snippets; anything else from
+    // the renderer would be stored and synced as a junk row.
+    const next = (Array.isArray(list) ? list : [])
+      .filter((s) => s && typeof s === 'object' && typeof s.trigger === 'string' && s.trigger.trim());
     const plan = currentPlan();
     // Block ADDING new snippets when the user has no access (signed out, or the
-    // trial has expired with no subscription/coupon). Editing and deleting what
-    // they already have stays allowed so nobody is locked out of their own data.
-    // Compare by TRIGGER SET, not list length: a length check is bypassable by
-    // deleting one snippet and adding a new one in the same save.
-    const prevTriggers = new Set((store.getPersonal() || []).map((s) => s && s.trigger));
-    const addsNew = next.some((s) => s && s.trigger && !prevTriggers.has(s.trigger));
+    // trial has expired with no subscription/coupon). Editing (incl. renaming a
+    // trigger) and deleting what they already have stays allowed so nobody is
+    // locked out of their own data. See addsNewSnippets in store.js.
+    const addsNew = addsNewSnippets(store.getPersonal() || [], next);
     if (addsNew && !plan.canAdd) {
       return { ok: false, error: 'locked', state: plan.state };
     }
@@ -914,6 +931,7 @@ function registerIpc() {
 
   // Team owner: publish current personal snippets to a shared folder.
   ipcMain.handle('publish-library', async (_e, folder) => {
+    if (typeof folder !== 'string' || !folder.trim()) return { ok: false, error: 'Choose a folder first.' };
     try {
       const target = writeTeamLibrary(folder, store.getPersonal());
       return { ok: true, target };

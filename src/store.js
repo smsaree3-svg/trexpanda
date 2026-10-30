@@ -167,6 +167,26 @@ function parseLibrary(payload) {
 }
 
 /**
+ * Does saving `next` over `prev` ADD a snippet (as opposed to editing, renaming
+ * or deleting existing ones)? Used to gate adding while the plan is locked.
+ * An entry counts as existing when it carries the id of a previous snippet
+ * (each id only once, so an id can't be reused to smuggle in a second snippet)
+ * or reuses a previous trigger. Comparing triggers alone wrongly treated a
+ * trigger RENAME as a new snippet and blocked editing on an expired plan.
+ */
+function addsNewSnippets(prev = [], next = []) {
+  const prevIds = new Set((prev || []).map((s) => s && s.id).filter(Boolean));
+  const prevTriggers = new Set((prev || []).map((s) => s && s.trigger));
+  const used = new Set();
+  return (next || []).some((s) => {
+    if (!s || !s.trigger) return false;
+    const known = !!s.id && prevIds.has(s.id) && !used.has(s.id);
+    if (s.id) used.add(s.id);
+    return !known && !prevTriggers.has(s.trigger);
+  });
+}
+
+/**
  * UTC calendar day as YYYY-MM-DD. The free-tier counter is keyed to the UTC day
  * so it lines up with the server (Supabase records usage under its own UTC
  * date); a stored count from another day reads as 0.
@@ -467,9 +487,22 @@ class Store {
     const now = Date.now();
     const iso = isoAt(now);
     const seen = new Set();
+    // Ids the incoming list carries explicitly. A snippet WITHOUT an id may
+    // inherit an existing snippet's id by trigger (CSV import of an existing
+    // trigger), but never one that another entry already owns: a brand-new
+    // snippet with a duplicate trigger used to receive the existing snippet's
+    // id, so the two shared one id (editing one edited the other, and sync
+    // collapsed them into one).
+    const claimed = new Set(incoming.filter((r) => r && r.id).map((r) => r.id));
     const out = incoming.map((raw) => {
       const s = { ...raw, origin: 'personal' };
-      const prior = (s.id && prevById.get(s.id)) || prevByTrigger.get(s.trigger) || null;
+      let prior = (s.id && prevById.get(s.id)) || null;
+      if (!prior && !s.id) {
+        const byTrig = prevByTrigger.get(s.trigger) || null;
+        if (byTrig && !(byTrig.id && (claimed.has(byTrig.id) || seen.has(byTrig.id)))) prior = byTrig;
+      } else if (!prior) {
+        prior = prevByTrigger.get(s.trigger) || null;
+      }
       if (!s.id) s.id = (prior && prior.id) || genSnippetId();
       seen.add(s.id);
       if (s.attachment) delete s.attachmentCleared;
@@ -758,5 +791,5 @@ class Store {
 
 module.exports = {
   normalizeSnippet, sanitizeUntrustedHtml, mergeSnippets, combineShared, parseLibrary,
-  mergeSnippetsForSync, combineUsage, genSnippetId, safeFileName, Store,
+  mergeSnippetsForSync, combineUsage, genSnippetId, safeFileName, addsNewSnippets, Store,
 };

@@ -208,6 +208,42 @@ test('Store.setPersonal assigns ids, stamps updatedAt, and tombstones deletions'
   assert.strictEqual(store.getSnippetTombstones().length, 0);
 });
 
+test('Store.setPersonal: a NEW snippet with an existing trigger gets its own id', () => {
+  const data = {};
+  const store = new Store({ get: (k, d) => (k in data ? data[k] : d), set: (k, v) => { data[k] = v; } });
+  store.setPersonal([{ trigger: ';a', replacement: 'A' }]);
+  const first = store.getPersonal()[0];
+  // Editor adds a second snippet that happens to reuse the trigger (no id yet).
+  store.setPersonal([first, { trigger: ';a', replacement: 'A again' }]);
+  const p = store.getPersonal();
+  assert.strictEqual(p.length, 2);
+  assert.strictEqual(p[0].id, first.id, 'existing snippet keeps its id');
+  assert.notStrictEqual(p[1].id, first.id, 'new snippet must not share the existing id');
+  // CSV-import style update (no id, existing trigger, original entry replaced) still keeps the id.
+  store.setPersonal([{ trigger: ';a', replacement: 'A3' }]);
+  assert.strictEqual(store.getPersonal()[0].id, first.id);
+});
+
+test('addsNewSnippets: renaming an existing snippet is an edit, not an add', () => {
+  const { addsNewSnippets } = require('../src/store');
+  const prev = [{ id: 'x1', trigger: ';a' }, { id: 'x2', trigger: ';b' }];
+  assert.strictEqual(addsNewSnippets(prev, [{ id: 'x1', trigger: ';renamed' }, prev[1]]), false);
+  assert.strictEqual(addsNewSnippets(prev, prev.slice(1)), false, 'delete');
+  assert.strictEqual(addsNewSnippets(prev, [...prev, { trigger: ';c' }]), true, 'add');
+  // Delete one + add one in the same save is still an add.
+  assert.strictEqual(addsNewSnippets(prev, [prev[0], { trigger: ';c' }]), true);
+  // Reusing an existing id twice can't smuggle in a second snippet.
+  assert.strictEqual(addsNewSnippets(prev, [...prev, { id: 'x1', trigger: ';c' }]), true);
+});
+
+test('writeTeamLibrary bumps the version already in the folder', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ttv-'));
+  writeTeamLibrary(dir, []);
+  writeTeamLibrary(dir, []);
+  const v = JSON.parse(fs.readFileSync(path.join(dir, 'team-library.json'), 'utf8')).version;
+  assert.strictEqual(v, 2);
+});
+
 console.log('\nsync: ' + passed + ' passed');
 
 test('Store.ensurePersonalIds backfills ids so legacy snippets sync instead of vanishing', () => {

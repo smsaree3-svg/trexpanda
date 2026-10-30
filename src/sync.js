@@ -75,10 +75,16 @@ function readLibraryFromPath(p) {
  */
 function writeTeamLibrary(folderPath, snippets, meta = {}) {
   const target = path.join(folderPath, LIBRARY_FILENAME);
+  // Continue from the version already in the folder (the app never passes one),
+  // otherwise every publish wrote version 1 and the counter never advanced.
+  let prevVersion = meta.version;
+  if (prevVersion == null) {
+    try { prevVersion = JSON.parse(fs.readFileSync(target, 'utf8')).version; } catch (_) { prevVersion = 0; }
+  }
   const payload = {
     // Coerce to a number first: a version read back as a string ("3") would make
     // `"3" + 1` = "31" and break monotonicity.
-    version: (Number(meta.version) || 0) + 1,
+    version: (Number(prevVersion) || 0) + 1,
     updatedAt: new Date().toISOString(),
     snippets,
   };

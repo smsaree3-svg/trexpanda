@@ -192,8 +192,8 @@ function renderStatus() {
   const banner = $('engine-banner');
   const problems = [];
   if (e.macAccessibility === false) problems.push('Trexpanda needs Accessibility permission to expand snippets on this Mac. Open System Settings → Privacy &amp; Security → Accessibility and switch <b>Trexpanda</b> on (if it is already on, remove it with − and add it again). Expansion starts automatically once allowed. <button class="btn small" id="openAxBtn">Open Accessibility settings</button>');
-  if (!e.hookAvailable) problems.push(`Global keyboard capture is unavailable${e.hookError ? ' (' + e.hookError + ')' : ''}. On macOS, grant Accessibility permission in System Settings → Privacy & Security → Accessibility, then reopen.`);
-  if (!e.injectionAvailable) problems.push(`Keystroke injection is unavailable${e.injectionError ? ' (' + e.injectionError + ')' : ''}. Snippets can be managed but won't expand until this is resolved.`);
+  if (!e.hookAvailable) problems.push(`Global keyboard capture is unavailable${e.hookError ? ' (' + esc(e.hookError) + ')' : ''}. On macOS, grant Accessibility permission in System Settings → Privacy & Security → Accessibility, then reopen.`);
+  if (!e.injectionAvailable) problems.push(`Keystroke injection is unavailable${e.injectionError ? ' (' + esc(e.injectionError) + ')' : ''}. Snippets can be managed but won't expand until this is resolved.`);
   if (e.cloudConfigured === false) problems.push('Trexpanda can\'t reach its online service, so sign-in, your free trial, and expansion are unavailable. Please download the latest version from trexpanda.com or contact hello@trexpanda.com.');
   if (problems.length) {
     banner.className = 'banner';
@@ -472,13 +472,17 @@ async function saveSnippet() {
     const now = (state.personal || []).findIndex((p) => p && p.id === editId);
     editIndex = now; // -1 if it was deleted elsewhere: save as a new snippet
   }
+  // Preserve any existing label (e.g. from a CSV import or team library) when
+  // editing; the editor has no label field, so defaulting to the trigger here
+  // would silently discard it. New snippets fall back to the trigger. A label
+  // that merely mirrored the OLD trigger is not a real label: keeping it on a
+  // rename showed the stale trigger as the snippet's name.
+  const prior = editIndex >= 0 ? state.personal[editIndex] : null;
+  const keepLabel = prior && prior.label && prior.label !== prior.trigger ? prior.label : null;
   const snippet = {
     trigger,
     replacement: text,
-    // Preserve any existing label (e.g. from a CSV import or team library) when
-    // editing; the editor has no label field, so defaulting to the trigger here
-    // would silently discard it. New snippets fall back to the trigger.
-    label: (editIndex >= 0 && state.personal[editIndex] && state.personal[editIndex].label) || trigger,
+    label: keepLabel || trigger,
     enabled: $('edit-enabled').checked,
     origin: 'personal',
   };
@@ -1031,18 +1035,18 @@ function friendRow(x, kind) {
   const uname = esc('@' + (p.username || 'user'));
   let actions = '';
   if (kind === 'incoming') {
-    actions = `<button class="primary" data-accept="${x.friendshipId}">Accept</button>` +
-      `<button class="danger" data-decline="${x.friendshipId}">Decline</button>`;
+    actions = `<button class="primary" data-accept="${esc(x.friendshipId)}">Accept</button>` +
+      `<button class="danger" data-decline="${esc(x.friendshipId)}">Decline</button>`;
   } else if (kind === 'outgoing') {
     actions = `<span class="chip">pending</span>` +
-      `<button class="danger" data-cancel="${x.friendshipId}">Cancel</button>`;
+      `<button class="danger" data-cancel="${esc(x.friendshipId)}">Cancel</button>`;
   } else {
     const on = cloud.sharedWith.has(x.userId);
     actions = `<span class="chip ${on ? 'on' : ''}">${on ? 'shared' : 'not shared'}</span>` +
-      `<button data-share="${x.userId}" data-on="${on ? 1 : 0}">${on ? 'Unshare' : 'Share'}</button>` +
-      `<button class="danger" data-unfriend="${x.friendshipId}">Remove</button>`;
+      `<button data-share="${esc(x.userId)}" data-on="${on ? 1 : 0}">${on ? 'Unshare' : 'Share'}</button>` +
+      `<button class="danger" data-unfriend="${esc(x.friendshipId)}">Remove</button>`;
   }
-  return `<div class="list-row"><div class="avatar">${initial(p.display_name || p.username)}</div>` +
+  return `<div class="list-row"><div class="avatar">${esc(initial(p.display_name || p.username))}</div>` +
     `<div class="who"><strong>${name}</strong><span class="uname">${uname}</span></div>` +
     `<div class="grow"></div><div class="actions">${actions}</div></div>`;
 }
@@ -1050,12 +1054,12 @@ function friendRow(x, kind) {
 function sharedRow(l) {
   const owner = l.owner || {};
   const on = cloud.subs.has(l.id);
-  return `<div class="list-row"><div class="avatar">${initial(owner.display_name || owner.username)}</div>` +
+  return `<div class="list-row"><div class="avatar">${esc(initial(owner.display_name || owner.username))}</div>` +
     `<div class="who"><strong>${esc(l.name || 'Library')}</strong>` +
     `<span class="uname">from @${esc(owner.username || 'user')}</span></div>` +
     `<div class="grow"></div><div class="actions">` +
     `<span class="chip ${on ? 'on' : ''}">${on ? 'on' : 'off'}</span>` +
-    `<button data-sub="${l.id}" data-on="${on ? 1 : 0}">${on ? 'Turn off' : 'Use these'}</button>` +
+    `<button data-sub="${esc(l.id)}" data-on="${on ? 1 : 0}">${on ? 'Turn off' : 'Use these'}</button>` +
     `</div></div>`;
 }
 

@@ -61,4 +61,16 @@ function charFor(keycode, shift, caps) {
   return useShift ? entry[1] : entry[0];
 }
 
-module.exports = { charFor, K, CAPS_LOCK };
+/**
+ * True when a keydown is part of a shortcut chord (Ctrl, Alt/Option or
+ * Cmd/Win held). Such keys do not type their character (Ctrl+C copies, Cmd+V
+ * pastes, Option+key types a different symbol), so they must never be fed to
+ * the expansion buffer; otherwise holding Ctrl and pressing e.g. "c" twice
+ * would "type" a trigger like "cc" and fire an expansion into the app.
+ * @param {{ctrlKey?:boolean, altKey?:boolean, metaKey?:boolean}} e uiohook event
+ */
+function isShortcutChord(e) {
+  return !!(e && (e.ctrlKey || e.altKey || e.metaKey));
+}
+
+module.exports = { charFor, isShortcutChord, K, CAPS_LOCK };

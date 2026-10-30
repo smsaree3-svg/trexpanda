@@ -40,4 +40,14 @@ test('CAPS_LOCK keycode is exported', () => {
   assert.strictEqual(CAPS_LOCK, 58);
 });
 
+test('isShortcutChord: Ctrl/Alt/Cmd chords are shortcuts, Shift alone is typing', () => {
+  const { isShortcutChord } = require('../src/keymap');
+  assert.strictEqual(isShortcutChord({ keycode: 46, ctrlKey: true }), true);  // Ctrl+C
+  assert.strictEqual(isShortcutChord({ keycode: 47, metaKey: true }), true);  // Cmd+V
+  assert.strictEqual(isShortcutChord({ keycode: 30, altKey: true }), true);   // Option+A
+  assert.strictEqual(isShortcutChord({ keycode: 39, shiftKey: true }), false); // ':' is typing
+  assert.strictEqual(isShortcutChord({ keycode: 30 }), false);
+  assert.strictEqual(isShortcutChord(null), false);
+});
+
 console.log('\nkeymap: ' + passed + ' passed');
