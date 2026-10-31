@@ -46,6 +46,28 @@ const DYNAMIC = {
   },
 };
 
+// Fill-in fields: `{{label}}` or `{{label=default}}` ask the user for a value at
+// expansion time (e.g. "Hi {{name}}, your order {{order=#}} ships {date}"). The
+// label contains no `{`, `}` or `=`; the optional default contains no `{` or `}`.
+// A field appears once in the prompt even if used several times, and the same
+// value fills every occurrence. Double braces keep this distinct from the single
+// brace {date} dynamic tokens.
+const FIELD_RE = /\{\{\s*([^{}=]+?)\s*(?:=\s*([^{}]*?)\s*)?\}\}/g;
+
+// Replace every {{field}} using the values map (keyed by label); fall back to the
+// field's default, then to empty. Run BEFORE {token} resolution so `{{name}}` is
+// never mistaken for the inner `{name}` token.
+function substituteFields(text, values) {
+  return String(text).replace(FIELD_RE, (whole, name, def) => {
+    const label = name.trim();
+    if (values && Object.prototype.hasOwnProperty.call(values, label)) {
+      const v = values[label];
+      return v == null ? '' : String(v);
+    }
+    return def != null ? def : '';
+  });
+}
+
 class Expander {
   /**
    * @param {Array<{trigger:string, replacement:string, enabled?:boolean}>} snippets
@@ -110,10 +132,19 @@ class Expander {
 
     const snippet = best.snippet;
     const rendered = this.render(snippet.replacement || '');
+    const fields = this.parseFields(snippet.replacement || '');
     this.buffer = ''; // consumed
     return {
       trigger: best.trigger,
+      // Default-filled text, used directly when there are no fields (or as the
+      // fallback if the UI cannot prompt). When `fields` is non-empty the caller
+      // prompts for values, then calls render(template, values) to get the final
+      // text before inserting.
       replacement: rendered.text,
+      // Fill-in fields to prompt for ([] when none), and the raw template to
+      // re-render once the user has supplied values.
+      fields,
+      template: snippet.replacement || '',
       // Optional rich HTML variant, with {tokens} resolved. When present the
       // caller writes both text and HTML to the clipboard so formatting
       // (bold, lists, links, images) survives a paste into rich apps.
@@ -172,10 +203,14 @@ class Expander {
    * Expand dynamic tokens and locate the optional caret marker "$|".
    * Supported: {date} {time} {datetime} and any custom via opts.dynamicResolver.
    * "$|" marks where the caret should land after insertion (it is removed).
+   * When `values` is given, {{fields}} are filled from it (by label), otherwise
+   * each field falls back to its default (or empty). `values` lets the caller
+   * re-render after prompting the user for fill-in fields.
+   * @param {object} [values] map of field label -> value
    * @returns {{text:string, caretBack:number}}
    */
-  render(replacement) {
-    let text = String(replacement);
+  render(replacement, values) {
+    let text = substituteFields(String(replacement), values);
 
     text = text.replace(/\{(\w+)\}/g, (whole, name) => {
       if (this.opts.dynamicResolver) {
@@ -208,8 +243,8 @@ class Expander {
    * Resolve {tokens} inside an HTML replacement and strip the "$|" caret
    * marker (caret placement isn't supported for rich paste). Returns HTML.
    */
-  renderHtml(html) {
-    let out = String(html);
+  renderHtml(html, values) {
+    let out = substituteFields(String(html), values);
     out = out.replace(/\{(\w+)\}/g, (whole, name) => {
       if (this.opts.dynamicResolver) {
         const custom = this.opts.dynamicResolver(name);
@@ -219,6 +254,27 @@ class Expander {
       return whole;
     });
     return out.split('$|').join('');
+  }
+
+  /**
+   * List the fill-in fields in a replacement, in first-appearance order with
+   * duplicates removed (one prompt per label). Each entry is { name, default }.
+   * Returns [] when the snippet has no fields, so the caller can take the normal
+   * fast path and insert immediately.
+   * @returns {Array<{name:string, default:string}>}
+   */
+  parseFields(replacement) {
+    const out = [];
+    const seen = new Set();
+    const re = new RegExp(FIELD_RE.source, 'g');
+    let m;
+    while ((m = re.exec(String(replacement))) !== null) {
+      const name = m[1].trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      out.push({ name, default: m[2] != null ? m[2] : '' });
+    }
+    return out;
   }
 }
 

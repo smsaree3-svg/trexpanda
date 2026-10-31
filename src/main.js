@@ -24,6 +24,8 @@ try { ({ uIOhook } = require('uiohook-napi')); } catch (err) { uiohookError = er
 
 let store, expander, tray, win;
 let suggestWin = null; // live autocomplete popup
+let fillWin = null;    // fill-in fields prompt (modal-ish, focusable)
+let fillResolve = null; // resolver for the in-flight fill prompt, if any
 let cloud = null;
 let storeBackend = null;
 let planRaw = null; // last-known RAW entitlement snapshot (see currentPlan)
@@ -48,6 +50,9 @@ let capsOn = false;
 // also captures our synthetic events; without this guard those re-enter
 // onKeyDown, corrupt the buffer, and can pop spurious suggestions or re-fire.
 let injecting = false;
+// True while the fill-in prompt window is open and focused. The user is typing
+// values INTO our own window, so those keystrokes must not reach the engine.
+let prompting = false;
 
 // ---------------------------------------------------------------------------
 
@@ -250,6 +255,9 @@ async function onKeyDown(e) {
   // Ignore the synthetic keystrokes we inject during an expansion so they don't
   // re-enter the engine and corrupt the buffer / re-fire triggers.
   if (injecting) return;
+  // While the fill-in prompt is open, the user is typing into OUR window; never
+  // feed those keystrokes to the engine.
+  if (prompting) return;
 
   const settings = store.getSettings();
   if (!settings.enabled) return;
@@ -286,28 +294,43 @@ async function onKeyDown(e) {
 
   // Expansion matched — inject the replacement.
   hideSuggest();
-  if (inject.available()) {
-    // Count the free-tier use BEFORE the async injection so a burst of fast
-    // expansions can't all read the pre-bump count and slip past the daily cap.
-    if (plan.state === 'expired') store.bumpDailyUsage();
-    injecting = true;
-    try {
-      if (action.attachment) {
-        await expandAttachment(action);
-      } else if (action.html) {
-        await inject.expandHtml(action, clipboard);
-      } else {
-        await inject.expand(action, clipboard);
-      }
-      stats.expansionsThisSession++;
-      recordExpansion(action);
-      pushState();
-    } catch (err) {
-      console.error('Injection failed:', err);
-    } finally {
-      // Keep the guard a hair longer to swallow trailing synthetic key events.
-      setTimeout(() => { injecting = false; }, 30);
+  if (!inject.available()) return;
+
+  // Fill-in fields: if the snippet has `{{field}}` placeholders, ask the user for
+  // their values first, then re-render the template with them. A snippet with no
+  // fields takes the fast path unchanged.
+  let finalAction = action;
+  if (action.fields && action.fields.length) {
+    const values = await promptFields(action);
+    if (values == null) return; // user cancelled; leave the typed trigger in place
+    const rendered = expander.render(action.template, values);
+    finalAction = Object.assign({}, action, {
+      replacement: rendered.text,
+      caretBack: rendered.caretBack,
+      html: action.html ? expander.renderHtml(action.template, values) : null,
+    });
+  }
+
+  // Count the free-tier use BEFORE the async injection so a burst of fast
+  // expansions can't all read the pre-bump count and slip past the daily cap.
+  if (plan.state === 'expired') store.bumpDailyUsage();
+  injecting = true;
+  try {
+    if (finalAction.attachment) {
+      await expandAttachment(finalAction);
+    } else if (finalAction.html) {
+      await inject.expandHtml(finalAction, clipboard);
+    } else {
+      await inject.expand(finalAction, clipboard);
     }
+    stats.expansionsThisSession++;
+    recordExpansion(finalAction);
+    pushState();
+  } catch (err) {
+    console.error('Injection failed:', err);
+  } finally {
+    // Keep the guard a hair longer to swallow trailing synthetic key events.
+    setTimeout(() => { injecting = false; }, 30);
   }
 }
 
@@ -648,6 +671,84 @@ function shouldSuggest(token) {
   return token.length >= (startsWithSymbol ? 1 : 2);
 }
 
+// ---------------------------------------------------------------------------
+// Fill-in fields prompt
+// ---------------------------------------------------------------------------
+// When a snippet contains `{{field}}` placeholders, we pop a small focusable
+// window so the user can fill them in, then inject the completed text. Unlike the
+// suggestion popup this window MUST take focus (the user types into it); the
+// global hook is muted via `prompting` while it is open, and focus returns to the
+// original app when it closes so the paste lands there.
+const FILL = { width: 380, maxHeight: 460 };
+
+function createFillWindow() {
+  if (fillWin && !fillWin.isDestroyed()) return fillWin;
+  fillWin = new BrowserWindow({
+    width: FILL.width,
+    height: 200,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'fill-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  fillWin.setAlwaysOnTop(true, 'screen-saver');
+  try { fillWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch (_) {}
+  fillWin.loadFile(path.join(__dirname, 'renderer', 'fill.html'));
+  fillWin.on('closed', () => { fillWin = null; });
+  return fillWin;
+}
+
+/**
+ * Show the fill-in prompt for a matched action and resolve with a
+ * { label: value } map, or null if the user cancelled. One prompt per label; the
+ * renderer pre-fills each input with the field's default.
+ */
+function promptFields(action) {
+  return new Promise((resolve) => {
+    // If a prompt is somehow already open, cancel it first.
+    if (fillResolve) { try { fillResolve(null); } catch (_) {} fillResolve = null; }
+
+    hideSuggest();
+    const w = createFillWindow();
+    const fields = action.fields.map((f) => ({ name: f.name, default: f.default || '' }));
+    // Size: a header + one row per field, clamped.
+    const rows = fields.length;
+    const h = Math.min(FILL.maxHeight, 78 + rows * 66 + 56);
+    let pt;
+    try { pt = screen.getCursorScreenPoint(); } catch (_) { pt = { x: 400, y: 400 }; }
+    const area = screen.getDisplayNearestPoint(pt).workArea;
+    const x = Math.round(area.x + (area.width - FILL.width) / 2);
+    const y = Math.round(area.y + (area.height - h) / 3);
+    w.setBounds({ x, y, width: FILL.width, height: Math.round(h) });
+
+    prompting = true;
+    fillResolve = (values) => {
+      fillResolve = null;
+      prompting = false;
+      if (fillWin && !fillWin.isDestroyed()) fillWin.hide();
+      // Give focus a moment to return to the original app before the caller injects.
+      setTimeout(() => resolve(values), 120);
+    };
+
+    const send = () => w.webContents.send('fill-data', { trigger: action.trigger, fields });
+    if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send);
+    else send();
+    w.show();
+    w.focus();
+  });
+}
+
 function refreshSuggestions(settings) {
   if (!settings || settings.showSuggestions === false) { hideSuggest(); return; }
   const sugg = expander.suggestions(SUGGEST.maxItems);
@@ -665,11 +766,19 @@ async function insertSuggestion(trigger) {
   const plan = currentPlan();
   if (!plan.hasAccess) return; // free-tier allowance spent (or signed out)
 
-  const rendered = expander.render(snippet.replacement || '');
+  const template = snippet.replacement || '';
+  const fields = expander.parseFields(template);
+  // Fill-in fields: prompt the user, then render with their values.
+  let values;
+  if (fields.length) {
+    values = await promptFields({ trigger, fields });
+    if (values == null) return; // cancelled
+  }
+  const rendered = expander.render(template, values);
   const action = {
     trigger,
     replacement: rendered.text,
-    html: snippet.html ? expander.renderHtml(snippet.html) : null,
+    html: snippet.html ? expander.renderHtml(snippet.html, values) : null,
     backspaces: token.length, // delete only what the user has typed so far
     caretBack: rendered.caretBack,
     attachment: snippet.attachment || null,
@@ -972,6 +1081,10 @@ function registerIpc() {
   // Live autocomplete popup: renderer tells us which suggestion was clicked.
   ipcMain.on('suggest-pick', (_e, trigger) => { insertSuggestion(trigger); });
   ipcMain.on('suggest-dismiss', () => { expander.reset(); hideSuggest(); });
+
+  // Fill-in fields prompt: the renderer returns the filled values or cancels.
+  ipcMain.on('fill-submit', (_e, values) => { if (fillResolve) fillResolve(values || {}); });
+  ipcMain.on('fill-cancel', () => { if (fillResolve) fillResolve(null); });
 }
 
 // ---------------------------------------------------------------------------
