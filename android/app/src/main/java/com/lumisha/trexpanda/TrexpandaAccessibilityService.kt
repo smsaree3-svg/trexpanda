@@ -131,7 +131,13 @@ class TrexpandaAccessibilityService : AccessibilityService() {
     private fun pasteAttachment(node: AccessibilityNodeInfo, raw: String?) {
         val att = SnippetAttachment.parse(raw) ?: return
         try {
-            AttachmentFiles.copyToClipboard(this, att, AttachmentFiles.uriFor(this, att))
+            val uri = AttachmentFiles.uriFor(this, att)
+            AttachmentFiles.copyToClipboard(this, att, uri)
+            // Documents can't be pasted into chat apps: open that app's send screen with the file.
+            if (!att.isImage && AttachmentFiles.shareToApp(this, att, uri, node.packageName?.toString())) {
+                Toast.makeText(this, getString(R.string.attachment_share, att.name), Toast.LENGTH_LONG).show()
+                return
+            }
             lastEditAt = System.currentTimeMillis()
             node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
             Toast.makeText(this, getString(R.string.attachment_copied, att.name), Toast.LENGTH_LONG).show()

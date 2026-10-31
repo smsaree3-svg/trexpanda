@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Bitmap
 import android.net.Uri
@@ -114,6 +115,30 @@ object AttachmentFiles {
             if (!tmp.renameTo(file)) { tmp.copyTo(file, overwrite = true); tmp.delete() }
         }
         return FileProvider.getUriForFile(context, authority(context), file)
+    }
+
+    /**
+     * Send a FILE (PDF, Excel, ...) to the app being typed in. Chat apps like
+     * WhatsApp only take images from a keyboard or paste; documents must come in
+     * through Android's share flow, so open that app's "send to" screen with the
+     * file attached (the user taps the chat, then Send). Falls back to the system
+     * share sheet when that app can't receive files. Returns false if nothing can.
+     */
+    fun shareToApp(context: Context, att: SnippetAttachment, uri: Uri, targetPackage: String?): Boolean {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = att.effectiveMime()
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newRawUri(att.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val pm = context.packageManager
+        val direct = if (!targetPackage.isNullOrEmpty() && targetPackage != context.packageName)
+            Intent(send).setPackage(targetPackage) else null
+        val intent = when {
+            direct != null && direct.resolveActivity(pm) != null -> direct
+            else -> Intent.createChooser(send, att.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try { context.startActivity(intent); true } catch (_: Exception) { false }
     }
 
     /**

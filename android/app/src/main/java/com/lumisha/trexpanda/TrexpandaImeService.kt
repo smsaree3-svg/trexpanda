@@ -169,7 +169,13 @@ class TrexpandaImeService : InputMethodService(), TrexpandaKeyboardView.Listener
                     if (ok) return
                 }
             }
-            AttachmentFiles.copyToClipboard(this, att, AttachmentFiles.uriFor(this, att))
+            val uri = AttachmentFiles.uriFor(this, att)
+            AttachmentFiles.copyToClipboard(this, att, uri)
+            // Documents can't be pasted into chat apps: open that app's send screen with the file.
+            if (!att.isImage && AttachmentFiles.shareToApp(this, att, uri, info?.packageName)) {
+                Toast.makeText(this, getString(R.string.attachment_share, att.name), Toast.LENGTH_LONG).show()
+                return
+            }
             Toast.makeText(this, getString(R.string.attachment_copied, att.name), Toast.LENGTH_LONG).show()
         } catch (_: Exception) {
             Toast.makeText(this, getString(R.string.attachment_failed), Toast.LENGTH_SHORT).show()
