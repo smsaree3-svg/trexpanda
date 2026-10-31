@@ -16,6 +16,18 @@ final class ExpanderEngine {
         let caretBack: Int
         /// The snippet's image/file to deliver after the text, if any.
         var attachment: SnippetAttachment? = nil
+        /// Fill-in fields to prompt for (empty when the snippet has none). When
+        /// non-empty the caller prompts for values, then calls `render` with those
+        /// values and the `template` to get the final text.
+        var fields: [Field] = []
+        /// The raw replacement, so the caller can re-render once it has field values.
+        var template: String = ""
+    }
+
+    /// A fill-in field: its label and its optional default value.
+    struct Field {
+        let name: String
+        let `default`: String
     }
 
     struct Suggestion {
@@ -65,7 +77,9 @@ final class ExpanderEngine {
             replacement: rendered.text,
             backspaces: e.trigger.count,
             caretBack: rendered.caretBack,
-            attachment: e.snippet.attachment
+            attachment: e.snippet.attachment,
+            fields: parseFields(e.snippet.replacement),
+            template: e.snippet.replacement
         )
     }
 
@@ -77,7 +91,9 @@ final class ExpanderEngine {
         let rendered = render(e.snippet.replacement)
         return Action(trigger: e.trigger, replacement: rendered.text,
                       backspaces: trigger.count, caretBack: rendered.caretBack,
-                      attachment: e.snippet.attachment)
+                      attachment: e.snippet.attachment,
+                      fields: parseFields(e.snippet.replacement),
+                      template: e.snippet.replacement)
     }
 
     /// Live suggestions from the last non-space token of the given text.
@@ -100,8 +116,12 @@ final class ExpanderEngine {
 
     private struct Rendered { let text: String; let caretBack: Int }
 
-    private func render(_ replacement: String) -> Rendered {
-        var text = resolveTokens(replacement)
+    /// Expand a replacement. When `values` is given, `{{fields}}` are filled from
+    /// it (by label); otherwise each field falls back to its default (or empty).
+    /// Fields are substituted BEFORE `{token}` resolution so `{{name}}` is never
+    /// mistaken for the inner `{name}` token.
+    private func render(_ replacement: String, values: [String: String?]? = nil) -> Rendered {
+        var text = resolveTokens(substituteFields(replacement, values: values))
         var caretBack = 0
         if let range = text.range(of: "$|") {
             let after = text[range.upperBound...].replacingOccurrences(of: "$|", with: "")
@@ -109,6 +129,61 @@ final class ExpanderEngine {
             text = String(text[..<range.lowerBound]) + after
         }
         return Rendered(text: text, caretBack: caretBack)
+    }
+
+    /// The fill-in field pattern: `{{label}}` or `{{label=default}}`. The label
+    /// holds no `{`, `}` or `=`; the optional default holds no `{` or `}`. Double
+    /// braces keep this distinct from the single-brace `{date}` dynamic tokens.
+    private static let fieldRegex = try? NSRegularExpression(
+        pattern: "\\{\\{\\s*([^{}=]+?)\\s*(?:=\\s*([^{}]*?)\\s*)?\\}\\}")
+
+    /// Replace every `{{field}}` using the `values` map (keyed by label); fall back
+    /// to the field's default, then to empty. Splices matches in reverse so earlier
+    /// ranges stay valid.
+    private func substituteFields(_ text: String, values: [String: String?]?) -> String {
+        guard let regex = ExpanderEngine.fieldRegex else { return text }
+        let ns = text as NSString
+        var result = text
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed()
+        for m in matches {
+            let label = ns.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
+            let value: String
+            if let values = values, let slot = values.index(forKey: label) {
+                value = values[slot].value ?? ""
+            } else if m.range(at: 2).location != NSNotFound {
+                value = ns.substring(with: m.range(at: 2))
+            } else {
+                value = ""
+            }
+            if let r = Range(m.range, in: result) { result.replaceSubrange(r, with: value) }
+        }
+        return result
+    }
+
+    /// Re-render a template once the user has supplied fill-in field values. The
+    /// UI calls this after prompting; it returns the final text and caret-back the
+    /// same way a match does. Mirrors desktop `render(replacement, values)` and
+    /// Android `render(replacement, values)`.
+    func fill(_ template: String, values: [String: String?]) -> (text: String, caretBack: Int) {
+        let r = render(template, values: values)
+        return (r.text, r.caretBack)
+    }
+
+    /// List the fill-in fields in a replacement, in first-appearance order with
+    /// duplicates removed (one prompt per label). Empty when the snippet has none.
+    func parseFields(_ replacement: String) -> [Field] {
+        guard let regex = ExpanderEngine.fieldRegex else { return [] }
+        let ns = replacement as NSString
+        var out: [Field] = []
+        var seen = Set<String>()
+        for m in regex.matches(in: replacement, range: NSRange(location: 0, length: ns.length)) {
+            let name = ns.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespaces)
+            if name.isEmpty || seen.contains(name) { continue }
+            seen.insert(name)
+            let def = m.range(at: 2).location != NSNotFound ? ns.substring(with: m.range(at: 2)) : ""
+            out.append(Field(name: name, default: def))
+        }
+        return out
     }
 
     private func resolveTokens(_ input: String) -> String {
