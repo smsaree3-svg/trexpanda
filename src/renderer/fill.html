@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<style>
+  :root {
+    --bg: #171d2b; --bg2: #1e2637; --line: #2a3346; --text: #e6ebf5;
+    --muted: #8a94a8; --accent: #5b8cff; --accent2: #3ad29f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; overflow: hidden;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--text); }
+  .card {
+    height: 100vh; width: 100vw; display: flex; flex-direction: column;
+    background: rgba(23, 29, 43, 0.99); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,.5);
+  }
+  .head {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px 8px; color: var(--muted);
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+    -webkit-app-region: drag; user-select: none;
+  }
+  .head .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent2); flex: none; }
+  .head .trig { color: var(--text); text-transform: none; letter-spacing: 0;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: rgba(91,140,255,.10); color: var(--accent); padding: 1px 7px; border-radius: 6px; }
+  .body { flex: 1; overflow-y: auto; padding: 4px 14px 2px; }
+  .field { margin: 10px 0; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+  .field input {
+    width: 100%; padding: 9px 11px; font-size: 14px; color: var(--text);
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 8px; outline: none;
+  }
+  .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(91,140,255,.25); }
+  .foot {
+    flex: none; display: flex; gap: 8px; justify-content: flex-end;
+    padding: 10px 14px 13px; border-top: 1px solid var(--line);
+  }
+  button {
+    font: inherit; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bg2); color: var(--text);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:hover { filter: brightness(1.08); }
+  .hint { flex: 1; align-self: center; font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head">
+    <span class="dot"></span>
+    <span>Fill in</span>
+    <span class="trig" id="trig"></span>
+  </div>
+  <div class="body" id="body"></div>
+  <div class="foot">
+    <span class="hint">Enter to insert · Esc to cancel</span>
+    <button id="cancel">Cancel</button>
+    <button id="insert" class="primary">Insert</button>
+  </div>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let fieldNames = [];
+
+  function build(data) {
+    const fields = (data && data.fields) || [];
+    fieldNames = fields.map((f) => f.name);
+    $('trig').textContent = data.trigger || '';
+    const body = $('body');
+    body.innerHTML = '';
+    fields.forEach((f, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'field';
+      const label = document.createElement('label');
+      label.textContent = f.name;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = f.default || '';
+      input.dataset.name = f.name;
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); window.fill.cancel(); }
+      });
+      wrap.appendChild(label);
+      wrap.appendChild(input);
+      body.appendChild(wrap);
+    });
+    // Focus the first field and select its default so typing replaces it.
+    const first = body.querySelector('input');
+    if (first) { first.focus(); first.select(); }
+  }
+
+  function submit() {
+    const values = {};
+    document.querySelectorAll('input[data-name]').forEach((el) => {
+      values[el.dataset.name] = el.value;
+    });
+    window.fill.submit(values);
+  }
+
+  $('insert').addEventListener('click', submit);
+  $('cancel').addEventListener('click', () => window.fill.cancel());
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); window.fill.cancel(); }
+  });
+
+  window.fill.onData(build);
+</script>
+</body>
+</html>
