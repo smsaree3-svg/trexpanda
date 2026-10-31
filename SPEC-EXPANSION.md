@@ -150,7 +150,7 @@ Rules:
 - **Order of resolution:** fields are substituted **first**, then the section 3
   dynamic tokens, then the section 4 `$|` caret marker is located. So `$|` and
   `{date}` behave exactly as before once the fields are filled, and a filled value
-  that happens to contain `{date}` is **not** reexpanded as a token.
+  that happens to contain `{date}` is **not** re-expanded as a token.
 - **Fallback:** a field with no supplied value uses its default; with no default,
   it expands to empty. An explicitly supplied **empty** value overrides the
   default (the user chose to leave it blank).
