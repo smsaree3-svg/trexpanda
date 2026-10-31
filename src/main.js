@@ -694,6 +694,30 @@ async function insertSuggestion(trigger) {
 // Windows & tray
 // ---------------------------------------------------------------------------
 
+/** Start with Windows/macOS sign-in, hidden in the tray (no window popping up). */
+function applyLoginItem(enabled) {
+  if (!app.isPackaged) return;
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!enabled, openAsHidden: true, args: ['--hidden'] });
+  } catch (err) {
+    console.error('Login item not set:', err);
+  }
+}
+
+/** First time the window is closed, say where Trexpanda went (it keeps running). */
+function hintStillRunning() {
+  try {
+    if (store.backend.get('trayHintShown', false)) return;
+    store.backend.set('trayHintShown', true);
+    new Notification({
+      title: 'Trexpanda is still running',
+      body: process.platform === 'darwin'
+        ? 'Your snippets keep expanding. Open Trexpanda from the panda icon in the menu bar.'
+        : 'Your snippets keep expanding. Open Trexpanda from the panda icon in the taskbar tray (click ^ if you don\'t see it).',
+    }).show();
+  } catch (_) {}
+}
+
 function createWindow() {
   if (win && !win.isDestroyed()) { win.show(); win.focus(); return; }
   win = new BrowserWindow({
@@ -716,7 +740,7 @@ function createWindow() {
     return { action: 'deny' };
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.on('closed', () => { win = null; });
+  win.on('closed', () => { win = null; hintStillRunning(); });
   win.webContents.on('did-finish-load', pushState);
 }
 
@@ -853,7 +877,7 @@ function registerIpc() {
     refreshTrayMenu();
     scheduleSync();
     if (typeof s.launchAtLogin === 'boolean') {
-      app.setLoginItemSettings({ openAtLogin: s.launchAtLogin });
+      applyLoginItem(s.launchAtLogin);
     }
     pushState();
     return { ok: true };
@@ -973,7 +997,17 @@ if (!gotLock) {
     rebuildEngine();
     registerIpc();
     buildTray();
-    createWindow();
+    // Start with the computer by default (once for existing installs too; the
+    // user can still switch it off in Settings), and when started that way stay
+    // quietly in the tray instead of opening the window.
+    if (!store.backend.get('loginDefaultApplied', false)) {
+      store.backend.set('loginDefaultApplied', true);
+      store.setSettings({ launchAtLogin: true });
+    }
+    applyLoginItem(store.getSettings().launchAtLogin);
+    let startedAtLogin = process.argv.includes('--hidden');
+    try { if (process.platform === 'darwin' && app.getLoginItemSettings().wasOpenedAtLogin) startedAtLogin = true; } catch (_) {}
+    if (!startedAtLogin) createWindow();
     createSuggestWindow(); // pre-warm the popup so first show is instant
 
     if (store.getSettings().enabled) startHook();

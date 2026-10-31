@@ -780,7 +780,7 @@ class Store {
       syncIntervalMin: 30, // how often to auto-sync
       teamWins: false, // conflict resolution
       enabled: true, // master on/off for expansion
-      launchAtLogin: false,
+      launchAtLogin: true, // a text expander only helps if it is always running
       showSuggestions: true, // live autocomplete popup while typing a trigger
       cloudSubscriptions: [], // library ids (shared with me) to pull on sync
       publishToCloud: false, // auto-publish personal snippets to my cloud library

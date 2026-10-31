@@ -12,7 +12,22 @@ import jwt, requests
 
 API = "https://api.appstoreconnect.apple.com"
 BUNDLE = "com.lumisha.trexpanda"
-VERSION = os.environ.get("APP_VERSION", "0.3.12")
+def _project_version():
+    import re
+    try:
+        txt = pathlib.Path(__file__).resolve().parent.parent.joinpath("project.yml").read_text()
+        m = re.search(r'MARKETING_VERSION:\s*"([^"]+)"', txt)
+        return m.group(1) if m else "0.3.12"
+    except Exception:
+        return "0.3.12"
+
+
+VERSION = os.environ.get("APP_VERSION") or _project_version()
+WHATS_NEW = """- Snippets with an image: paste it in WhatsApp, then tap "Add text" to use the snippet as the caption
+- Send files (PDF, Excel...) with their text from the keyboard bar
+- See how many times you use each snippet and the typing time you've saved, across all your devices
+- Images and files sync reliably between devices, and removing one sticks everywhere
+- Lighter keyboard with large attachments, better Hindi and other Indian-script triggers, and many sync fixes"""
 
 DESCRIPTION = """Stop typing the same things over and over. Trexpanda turns short triggers into full text: your address, an email sign-off, a meeting link, or a reply you send every day.
 
@@ -86,11 +101,36 @@ def main():
     app = call("GET", f"/apps?filter[bundleId]={BUNDLE}")["data"][0]
     app_id = app["id"]
     versions = call("GET", f"/apps/{app_id}/appStoreVersions?filter[platform]=IOS&limit=10")["data"]
-    ver = next(v for v in versions if v["attributes"]["appStoreState"] in
-               ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED",
-                "WAITING_FOR_REVIEW", "IN_REVIEW", "INVALID_BINARY"))
+    editable = ("PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED",
+                "WAITING_FOR_REVIEW", "IN_REVIEW", "INVALID_BINARY")
+    ver = next((v for v in versions if v["attributes"]["appStoreState"] in editable), None)
+    if ver is None:
+        # The previous version is live: start the next one (an app update).
+        ver = call("POST", "/appStoreVersions", {"data": {"type": "appStoreVersions",
+                   "attributes": {"platform": "IOS", "versionString": VERSION},
+                   "relationships": {"app": {"data": {"type": "apps", "id": app_id}}}}})["data"]
+        note(f"Created version {VERSION} (update)")
+    is_update = any(v["attributes"]["appStoreState"] in ("READY_FOR_SALE", "READY_FOR_DISTRIBUTION")
+                    for v in versions)
     note(f"Version {ver['attributes']['versionString']} is {ver['attributes']['appStoreState']}")
     vid = ver["id"]
+
+    def withdraw():
+        """Pull a waiting submission back so a newer build can replace it."""
+        subs = call("GET", f"/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS&limit=20")["data"]
+        live = [x for x in subs if x["attributes"]["state"] in ("WAITING_FOR_REVIEW", "IN_REVIEW", "UNRESOLVED_ISSUES")]
+        for x in live:
+            call("PATCH", f"/reviewSubmissions/{x['id']}", {"data": {"type": "reviewSubmissions", "id": x["id"],
+                 "attributes": {"canceled": True}}})
+        for _ in range(40):  # wait until the version is editable again
+            st = call("GET", f"/appStoreVersions/{vid}")["data"]["attributes"]["appStoreState"]
+            if st not in ("WAITING_FOR_REVIEW", "IN_REVIEW"):
+                note(f"Version state now {st}")
+                return
+            time.sleep(15)
+        raise RuntimeError("submission is still being withdrawn; run again in a few minutes")
+    if os.environ.get("REPLACE") == "1":
+        step("Withdraw the waiting submission", withdraw)
 
     step("Version and copyright", lambda: call("PATCH", f"/appStoreVersions/{vid}", {"data": {
         "type": "appStoreVersions", "id": vid,
@@ -103,6 +143,9 @@ def main():
             "type": "appStoreVersionLocalizations", "id": loc["id"], "attributes": {
                 "description": DESCRIPTION, "keywords": KEYWORDS, "promotionalText": PROMO,
                 "supportUrl": "https://trexpanda.com", "marketingUrl": "https://trexpanda.com"}}})
+        if is_update:  # "What's New" is required for updates (and not allowed on a first version)
+            call("PATCH", f"/appStoreVersionLocalizations/{loc['id']}", {"data": {
+                "type": "appStoreVersionLocalizations", "id": loc["id"], "attributes": {"whatsNew": WHATS_NEW}}})
         return loc["id"]
     loc_id = {}
     step("Description, keywords and URLs", lambda: loc_id.setdefault("id", localization()))
@@ -175,22 +218,6 @@ def main():
                  "relationships": {"appStoreVersion": {"data": {"type": "appStoreVersions", "id": vid}}}}})
     step("App Review contact and notes", review)
 
-    def withdraw():
-        """Pull a waiting submission back so a newer build can replace it."""
-        subs = call("GET", f"/reviewSubmissions?filter[app]={app_id}&filter[platform]=IOS&limit=20")["data"]
-        live = [x for x in subs if x["attributes"]["state"] in ("WAITING_FOR_REVIEW", "IN_REVIEW", "UNRESOLVED_ISSUES")]
-        for x in live:
-            call("PATCH", f"/reviewSubmissions/{x['id']}", {"data": {"type": "reviewSubmissions", "id": x["id"],
-                 "attributes": {"canceled": True}}})
-        for _ in range(40):  # wait until the version is editable again
-            st = call("GET", f"/appStoreVersions/{vid}")["data"]["attributes"]["appStoreState"]
-            if st not in ("WAITING_FOR_REVIEW", "IN_REVIEW"):
-                note(f"Version state now {st}")
-                return
-            time.sleep(15)
-        raise RuntimeError("submission is still being withdrawn; run again in a few minutes")
-    if os.environ.get("REPLACE") == "1":
-        step("Withdraw the waiting submission", withdraw)
 
     def build():
         for _ in range(60):  # wait for Apple to finish processing the newest upload
