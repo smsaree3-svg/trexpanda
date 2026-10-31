@@ -374,7 +374,40 @@ test('sync never drops an image/file just because the newer copy lacks it (same 
     remote: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: att, updated_at: '2026-10-27T10:00:00Z' }],
   });
   assert.strictEqual(m.live[0].attachment, undefined);
-  assert.strictEqual(m.push[0].attachment, null);
+  assert.deepStrictEqual(m.push[0].attachment, { type: 'none', cleared: true }); // tells other devices
+});
+
+test('removing an image on one device removes it everywhere (cleared marker), and re-adding works', () => {
+  const att = { type: 'image', name: 'a.png', mime: 'image/png', data: 'iVBORw0KGgo=' };
+  const A = '11111111-1111-4111-8111-111111111111';
+  // Device 1 removed it on purpose: its push carries the cleared marker.
+  let m = mergeSnippetsForSync({
+    live: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachmentCleared: true, updatedAt: '2026-10-30T10:00:00Z' }],
+    remote: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: att, updated_at: '2026-10-29T10:00:00Z' }],
+  });
+  assert.deepStrictEqual(m.push[0].attachment, { type: 'none', cleared: true });
+  // Device 2 still has the image locally (older), cloud now has the marker: image goes, not pushed back.
+  m = mergeSnippetsForSync({
+    live: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: att, updatedAt: '2026-10-29T10:00:00Z' }],
+    remote: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: { type: 'none', cleared: true }, updated_at: '2026-10-30T10:00:00Z' }],
+  });
+  assert.strictEqual(m.live[0].attachment, undefined);
+  assert.strictEqual(m.live[0].attachmentCleared, true);
+  assert.strictEqual(m.push.length, 0);
+  // Same through the same-trigger path (different ids).
+  m = mergeSnippetsForSync({
+    live: [{ id: '22222222-2222-4222-8222-222222222222', trigger: ';ty', replacement: 'Thanks', attachment: att, updatedAt: '2026-10-29T10:00:00Z' }],
+    remote: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: JSON.stringify({ type: 'none', cleared: true }), updated_at: '2026-10-30T10:00:00Z' }],
+  });
+  assert.strictEqual(m.live.length, 1);
+  assert.strictEqual(m.live[0].attachment, undefined);
+  // Adding an image again later wins over the marker.
+  m = mergeSnippetsForSync({
+    live: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: att, updatedAt: '2026-10-31T10:00:00Z' }],
+    remote: [{ id: A, trigger: ';ty', replacement: 'Thanks', attachment: { type: 'none', cleared: true }, updated_at: '2026-10-30T10:00:00Z' }],
+  });
+  assert.deepStrictEqual(m.live[0].attachment, att);
+  assert.deepStrictEqual(m.push[0].attachment, att);
 });
 
 test('safeFileName strips paths and shell characters from shared attachment names', () => {

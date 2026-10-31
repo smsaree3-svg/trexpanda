@@ -85,4 +85,11 @@ class SyncMergeTest {
             listOf(snip("a", ";ty", "Thanks", updatedAt = now - 1000).copy(attachment = att)), now)
         assertNull(r.live.single().attachment)
     }
+
+    @Test fun cloudRemovalOnPurposeIsNotUndone() {
+        val r = SyncMerge.merge(listOf(snip("a", ";ty", "Thanks", updatedAt = now - 1000).copy(attachment = att)), emptyList(),
+            listOf(snip("a", ";ty", "Thanks", updatedAt = now).copy(attachmentCleared = true)), now)
+        assertNull(r.live.single().attachment)
+        assertTrue(r.push.isEmpty())
+    }
 }

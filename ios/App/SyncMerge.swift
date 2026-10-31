@@ -73,7 +73,7 @@ enum SyncMerge {
                         s.attachment = ra
                         pushLocal(LocalState(dead: false, ts: l.ts, snippet: s, tombstone: nil))
                     } else { pushLocal(l) }
-                } else if r.deletedAt == nil, r.attachment == nil, !l.dead, let la = l.snippet?.attachment {
+                } else if r.deletedAt == nil, r.attachment == nil, r.attachmentCleared != true, !l.dead, let la = l.snippet?.attachment {
                     var s = r
                     s.attachment = la
                     s.updatedAt = max(r.updatedAt, l.ts)

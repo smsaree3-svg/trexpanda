@@ -106,7 +106,7 @@ object SyncMerge {
                     } else {
                         // Remote is newer (ties go to remote) -> adopt it, no push.
                         if (r.isDeleted) keepTomb(Tombstone(id, r.trigger, r.deletedAt!!), now)
-                        else if (rAtt == null && lAtt != null && !l.dead) {
+                        else if (rAtt == null && lAtt != null && !l.dead && !r.attachmentCleared) {
                             // The cloud copy lost this device's image/file: keep it and send it back.
                             val out = r.copy(attachment = lAtt, updatedAt = maxOf(r.updatedAt, l.ts))
                             newLive.add(out)

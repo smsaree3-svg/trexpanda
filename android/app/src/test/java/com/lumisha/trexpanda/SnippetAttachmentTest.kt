@@ -78,4 +78,15 @@ class SnippetAttachmentTest {
         assertEquals("", clip.getItemAt(0).text.toString())
         assertTrue(clip.description.hasMimeType("application/pdf"))
     }
+
+    @Test
+    fun clearedMarkerRoundTripsThroughRows() {
+        val s = Snippet(id = "x", trigger = ";p", attachment = null, attachmentCleared = true)
+        val row = SnippetJson.snippetToRow(s, "u")
+        assertTrue(row.getJSONObject("attachment").getBoolean("cleared"))
+        val back = SnippetJson.snippetFromRow(row)
+        assertNull(back.attachment)
+        assertTrue(back.attachmentCleared)
+        assertNull(SnippetAttachment.parse(SnippetJson.ATTACHMENT_CLEARED))
+    }
 }

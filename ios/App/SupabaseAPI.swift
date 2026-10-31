@@ -142,7 +142,7 @@ struct SupabaseAPI {
 
     static func snippet(fromRow r: [String: Any]) -> Snippet? {
         guard let id = (r["id"] as? String)?.lowercased() else { return nil }
-        return Snippet(id: id,
+        var s = Snippet(id: id,
                        trigger: (r["trigger"] as? String) ?? "",
                        replacement: (r["replacement"] as? String) ?? "",
                        label: r["label"] as? String,
@@ -151,6 +151,21 @@ struct SupabaseAPI {
                        enabled: (r["enabled"] as? Bool) ?? true,
                        updatedAt: millis(r["updated_at"]) ?? 0,
                        deletedAt: millis(r["deleted_at"]))
+        if s.attachment == nil, isClearedMarker(r["attachment"]) { s.attachmentCleared = true }
+        return s
+    }
+
+    /// Synced when an attachment is removed on purpose (same marker as desktop and Android),
+    /// so other devices drop their copy instead of putting it back.
+    static let attachmentClearedMarker: [String: Any] = ["type": "none", "cleared": true]
+
+    static func isClearedMarker(_ v: Any?) -> Bool {
+        var o = v as? [String: Any]
+        if o == nil, let str = v as? String, let d = str.data(using: .utf8) {
+            o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
+        }
+        guard let o else { return false }
+        return (o["cleared"] as? Bool) == true && o["data"] == nil
     }
 
     static func row(from s: Snippet, userId: String) -> [String: Any] {
@@ -164,7 +179,9 @@ struct SupabaseAPI {
         row["trigger"] = s.trigger.isEmpty ? NSNull() : s.trigger
         row["label"] = s.label ?? NSNull()
         row["html"] = s.html ?? NSNull()
-        row["attachment"] = s.attachment?.json ?? NSNull()
+        if let att = s.attachment { row["attachment"] = att.json }
+        else if s.attachmentCleared == true { row["attachment"] = attachmentClearedMarker }
+        else { row["attachment"] = NSNull() }
         row["deleted_at"] = s.deletedAt.map(isoString) ?? NSNull()
         return row
     }

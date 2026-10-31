@@ -89,23 +89,38 @@ object SnippetJson {
         put("replacement", s.replacement)
         put("label", s.label ?: JSONObject.NULL)
         put("html", s.html ?: JSONObject.NULL)
-        put("attachment", s.attachment?.let { safeJson(it) } ?: JSONObject.NULL)
+        // Removed on purpose: send the marker so other devices drop their copy too.
+        put("attachment", s.attachment?.let { safeJson(it) }
+            ?: if (s.attachmentCleared) JSONObject(ATTACHMENT_CLEARED) else JSONObject.NULL)
         put("enabled", s.enabled)
         put("updated_at", millisToIso(if (s.updatedAt > 0) s.updatedAt else System.currentTimeMillis()))
         put("deleted_at", s.deletedAt?.let { millisToIso(it) } ?: JSONObject.NULL)
     }
 
-    fun snippetFromRow(o: JSONObject): Snippet = Snippet(
-        id = o.optString("id", ""),
-        trigger = o.optStringOrNull("trigger"),
-        replacement = o.optString("replacement", ""),
-        label = o.optStringOrNull("label"),
-        html = o.optStringOrNull("html"),
-        attachment = if (o.isNull("attachment")) null else o.get("attachment").toString(),
-        enabled = o.optBoolean("enabled", true),
-        updatedAt = isoToMillis(o.optStringOrNull("updated_at")),
-        deletedAt = o.optStringOrNull("deleted_at")?.let { isoToMillis(it) },
-    )
+    fun snippetFromRow(o: JSONObject): Snippet {
+        val raw = if (o.isNull("attachment")) null else o.get("attachment").toString()
+        val cleared = raw != null && isClearedMarker(raw)
+        return Snippet(
+            id = o.optString("id", ""),
+            trigger = o.optStringOrNull("trigger"),
+            replacement = o.optString("replacement", ""),
+            label = o.optStringOrNull("label"),
+            html = o.optStringOrNull("html"),
+            attachment = if (cleared) null else raw,
+            enabled = o.optBoolean("enabled", true),
+            updatedAt = isoToMillis(o.optStringOrNull("updated_at")),
+            deletedAt = o.optStringOrNull("deleted_at")?.let { isoToMillis(it) },
+            attachmentCleared = cleared,
+        )
+    }
+
+    /** Same marker the desktop and iPhone apps sync when an attachment is removed on purpose. */
+    const val ATTACHMENT_CLEARED = """{"type":"none","cleared":true}"""
+
+    fun isClearedMarker(raw: String): Boolean = try {
+        val j = JSONObject(raw)
+        j.optBoolean("cleared", false) && !j.has("data")
+    } catch (_: Exception) { false }
 
     fun rowsFromArray(arr: JSONArray): List<Snippet> =
         (0 until arr.length()).map { snippetFromRow(arr.getJSONObject(it)) }

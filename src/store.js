@@ -263,6 +263,18 @@ function validAttachment(a) {
   return v;
 }
 
+/**
+ * Synced in the attachment column when an image/file was removed on purpose, so
+ * other devices drop their copy instead of putting it back. Older app versions
+ * read it as "no attachment".
+ */
+const ATTACHMENT_CLEARED = Object.freeze({ type: 'none', cleared: true });
+function isClearedMarker(a) {
+  let v = a;
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch (_) { return false; } }
+  return !!(v && typeof v === 'object' && v.cleared === true && !v.data);
+}
+
 /** The live-snippet shape kept locally, from a cloud row or a local record. */
 function liveFromRow(id, r, ts) {
   const out = {
@@ -277,7 +289,7 @@ function liveFromRow(id, r, ts) {
   if (r.html) out.html = r.html;
   const att = validAttachment(r.attachment);
   if (att) out.attachment = att;
-  if (r.attachmentCleared && !att) out.attachmentCleared = true;
+  if (!att && (r.attachmentCleared || isClearedMarker(r.attachment))) out.attachmentCleared = true;
   return out;
 }
 
@@ -303,7 +315,7 @@ function rowFromWinner(id, w) {
     replacement: typeof s.replacement === 'string' ? s.replacement : '',
     label: typeof s.label === 'string' ? s.label : (s.trigger || ''),
     html: s.html || null,
-    attachment: s.attachment || null,
+    attachment: validAttachment(s.attachment) || (s.attachmentCleared || isClearedMarker(s.attachment) ? ATTACHMENT_CLEARED : null),
     enabled: s.enabled !== false,
     updated_at: isoAt(w.ts),
     deleted_at: null,
@@ -352,13 +364,14 @@ function mergeSnippetsForSync({ live = [], tombstones = [], remote = [], now = D
     local.delete(id);
     const rAtt = validAttachment(r.attachment);
     const lAtt = validAttachment(l.rec.attachment);
+    const rCleared = isClearedMarker(r.attachment);
     if (l.ts > tsMs(r.updated_at)) {
       // Local newer: push under the cloud id, keeping the cloud's image/file if
       // this copy has none (two devices made the same trigger, one with a file).
       const rec = { ...l.rec, id: r.id };
       if (!lAtt && rAtt && !l.rec.attachmentCleared) rec.attachment = rAtt;
       local.set(r.id, { state: 'live', ts: l.ts, rec });
-    } else if (lAtt && !rAtt) {
+    } else if (lAtt && !rAtt && !rCleared) {
       // Cloud copy wins but has no attachment: adopt it plus this device's file, and push.
       const rts = tsMs(r.updated_at) + 1;
       local.set(r.id, { state: 'live', ts: rts, rec: { ...liveFromRow(r.id, r, rts), attachment: lAtt } });
@@ -398,7 +411,7 @@ function mergeSnippetsForSync({ live = [], tombstones = [], remote = [], now = D
       if (!wAtt) {
         if (win.rec === l.rec && rAtt && !l.rec.attachmentCleared) {
           win = { ...win, rec: { ...l.rec, attachment: rAtt } };
-        } else if (win.rec === r && lAtt) {
+        } else if (win.rec === r && lAtt && !isClearedMarker(r.attachment)) {
           win = { ...win, rec: { ...liveFromRow(id, r, rTs), attachment: lAtt }, push: true, ts: Math.max(rTs, l.ts) };
         }
       }

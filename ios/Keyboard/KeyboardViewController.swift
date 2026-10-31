@@ -97,7 +97,7 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Reload every time the keyboard appears, so edits in the app apply at once.
-        loadedSnippets = SharedStore.loadSnippets().filter { $0.enabled && !$0.isDeleted }
+        loadedSnippets = SharedStore.loadKeyboardSnippets().filter { $0.enabled && !$0.isDeleted }
         engine.setSnippets(loadedSnippets)
         offerCaptionIfEmptyField()
         symbols = false; moreSymbols = false; capsLock = false
@@ -152,7 +152,10 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func apply(_ action: ExpanderEngine.Action) {
-        for _ in 0..<action.backspaces { textDocumentProxy.deleteBackward() }
+        if action.backspaces > 0 {
+            let before = textDocumentProxy.documentContextBeforeInput ?? ""
+            deleteTyped(String(before.suffix(action.backspaces)), count: action.backspaces)
+        }
         textDocumentProxy.insertText(action.replacement)
         if action.caretBack > 0 {
             // The proxy's offset counts UTF-16 units, not Characters (an emoji after
@@ -163,19 +166,29 @@ final class KeyboardViewController: UIInputViewController {
         UIDevice.current.playInputClick()
         recordUse(action, typed: action.backspaces)
         lastExpandedText = action.replacement
-        if let att = action.attachment { copyAttachment(att, trigger: action.trigger) }
+        if let att = action.attachment { copyAttachment(fullAttachment(att, trigger: action.trigger), trigger: action.trigger) }
     }
 
     /// iOS keyboards can only type text. Images go on the clipboard (WhatsApp and
     /// most apps offer Paste for images). Other files (PDF, Excel...) can't be
     /// pasted into chat apps on iPhone, so the bar offers "Send <file>", which
     /// opens Trexpanda's share sheet with the real file.
+    /// The keyboard's snippet list carries attachments without their data (memory);
+    /// read the real file only now, when this snippet is used.
+    private func fullAttachment(_ att: SnippetAttachment, trigger: String) -> SnippetAttachment {
+        guard att.data.isEmpty else { return att }
+        let lc = trigger.lowercased()
+        guard let id = loadedSnippets.first(where: { $0.trigger.lowercased() == lc && $0.attachment != nil })?.id,
+              let full = SharedStore.loadAttachment(snippetId: id) else { return att }
+        return full
+    }
+
     private func copyAttachment(_ att: SnippetAttachment, trigger: String) {
         guard hasFullAccess else {
             notice = "Allow Full Access to send this snippet's attachment"
             return
         }
-        guard let data = att.bytes else { notice = "Couldn't read this snippet's attachment"; return }
+        guard let data = att.bytes, !data.isEmpty else { notice = "Open Trexpanda once to finish setting up this attachment"; return }
         let ext = (att.name as NSString).pathExtension
         let type = (att.mime.isEmpty ? nil : UTType(mimeType: att.mime))
             ?? (ext.isEmpty ? nil : UTType(filenameExtension: ext))
@@ -277,12 +290,34 @@ final class KeyboardViewController: UIInputViewController {
     private var lastSuggestionTyped = 0
     private var lastExpandedText = ""
 
+    /// Delete the `count` characters the user typed (`typed`). In Hindi and other
+    /// Indic scripts one deleteBackward can remove only part of a character (a
+    /// vowel sign), leaving pieces of the trigger behind. When that happens, keep
+    /// deleting, but only while the text still visibly holds the leftover pieces;
+    /// if the app doesn't report its text right away, never guess.
+    private func deleteTyped(_ typed: String, count: Int) {
+        guard count > 0 else { return }
+        let before0 = textDocumentProxy.documentContextBeforeInput ?? ""
+        for _ in 0..<count { textDocumentProxy.deleteBackward() }
+        let scalars = typed.unicodeScalars.count
+        let extra = scalars - count
+        guard extra > 0, !typed.isEmpty, before0.hasSuffix(typed) else { return }
+        let target = String(String.UnicodeScalarView(before0.unicodeScalars.dropLast(scalars)))
+        for _ in 0..<extra {
+            let now = textDocumentProxy.documentContextBeforeInput ?? ""
+            if now == before0 { return }                                   // not updated yet: don't guess
+            guard now.unicodeScalars.count > target.unicodeScalars.count,
+                  now.unicodeScalars.starts(with: target.unicodeScalars) else { return }
+            textDocumentProxy.deleteBackward()
+        }
+    }
+
     private func useSuggestion(_ trigger: String) {
         // Remove the partial token the user typed, then insert the snippet.
         let before = textDocumentProxy.documentContextBeforeInput ?? ""
         let token = before.split(whereSeparator: { $0.isWhitespace }).last.map(String.init) ?? ""
         guard let action = engine.snippetAction(trigger) else { return }
-        for _ in 0..<token.count { textDocumentProxy.deleteBackward() }
+        deleteTyped(token, count: token.count)
         lastSuggestionTyped = token.count
         apply(ExpanderEngine.Action(trigger: action.trigger, replacement: action.replacement,
                                     backspaces: 0, caretBack: action.caretBack,
