@@ -121,6 +121,51 @@ same account shows the same suggestion order everywhere. (Clarified after the
 audit: the desktop engine was using a locale-aware comparison and now uses plain
 lexicographic, matching Android and iOS.)
 
+## 9. Fill-in fields (`{{label}}`)
+
+A replacement may contain **fill-in fields** that the user fills in at expansion
+time, so one snippet can produce different text each time it fires. A field is
+written with **double braces**:
+
+| Syntax                 | Meaning                                             |
+|------------------------|-----------------------------------------------------|
+| `{{label}}`            | prompt for `label`; empty if left blank             |
+| `{{label=default}}`    | prompt for `label`, pre-filled with `default`       |
+
+Example: `Hi {{name}}, your order {{order=#}} ships {date}.`
+
+Rules:
+
+- The **label** contains no `{`, `}` or `=`. The optional **default** (after the
+  first `=`) contains no `{` or `}`. Whitespace just inside the braces, and around
+  the `=`, is trimmed: `{{ full name = John Doe }}` has label `full name` and
+  default `John Doe`.
+- **Double braces, not single.** `{{...}}` is a fill-in field; the single-brace
+  `{date}` / `{time}` / `{datetime}` of section 3 are dynamic tokens. A field
+  named like a token (`{{date}}`) is still a field and does not collide with the
+  `{date}` token.
+- **One prompt per label.** If a label appears more than once, the user is asked
+  once and the same value fills **every** occurrence. Fields are listed in
+  **first-appearance order**, duplicates removed.
+- **Order of resolution:** fields are substituted **first**, then the section 3
+  dynamic tokens, then the section 4 `$|` caret marker is located. So `$|` and
+  `{date}` behave exactly as before once the fields are filled, and a filled value
+  that happens to contain `{date}` is **not** reexpanded as a token.
+- **Fallback:** a field with no supplied value uses its default; with no default,
+  it expands to empty. An explicitly supplied **empty** value overrides the
+  default (the user chose to leave it blank).
+- A snippet with **no** fields takes the normal fast path and is inserted
+  immediately, with no prompt.
+- `backspaces` (trigger length) and the grapheme-cluster rule for `caretBack`
+  (section 4) are unchanged; `caretBack` is measured on the **final, filled** text.
+
+Engine surface (identical in spirit on all three platforms): a match reports the
+`fields` to prompt for (empty when none) and the raw `template`; the host prompts
+for values and then re-renders the template with them (`render(replacement,
+values)` on desktop and Android, `fill(template, values)` on iOS) to get the final
+text and `caretBack`. When the host cannot prompt, the default-filled `replacement`
+on the match is a safe fallback.
+
 ---
 
 ## Conformance suite: ExpansionSpecificationV1
@@ -132,6 +177,9 @@ they are the behavior contract, and must not be weakened to make a change pass.
 - Desktop: `test/expansion-spec-v1.test.js` (in `npm test` and `npm run test:spec`)
 - Android: `ExpansionSpecificationV1Test.kt`
 - iOS: `ExpansionSpecificationV1Tests.swift`
+
+The suite covers vectors V1–V21 (sections 1–8) and F1–F9 (section 9, fill-in
+fields) with identical expected results on every platform.
 
 ## Appendix: Performance baseline (v1)
 
