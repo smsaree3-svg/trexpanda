@@ -114,4 +114,59 @@ final class ExpansionSpecificationV1Tests: XCTestCase {
             XCTAssertEqual(a?.caretBack, c.expected, "caretBack for \(c.after)")
         }
     }
+
+    // ---- Fill-in fields: `{{label}}` / `{{label=default}}` (SPEC section 9) ----
+
+    func testF1ParseFieldsOrderDedupeDefaults() {
+        let f = ExpanderEngine().parseFields("Hi {{name}}, order {{order=#}} for {{name}}")
+        XCTAssertEqual(f.count, 2)
+        XCTAssertEqual(f[0].name, "name");  XCTAssertEqual(f[0].default, "")
+        XCTAssertEqual(f[1].name, "order"); XCTAssertEqual(f[1].default, "#")
+    }
+
+    func testF2PlainSnippetHasNoFields() {
+        XCTAssertTrue(ExpanderEngine().parseFields("Hello").isEmpty)
+        let e = ExpanderEngine(snippets: [snip(";p", "Hello")])
+        XCTAssertTrue(e.matchSuffix(";p")?.fields.isEmpty ?? false)
+    }
+
+    func testF3MatchSurfacesFieldsAndTemplate() {
+        let e = ExpanderEngine(snippets: [snip(";hi", "Hi {{name=there}}!")])
+        let a = e.matchSuffix(";hi")
+        XCTAssertEqual(a?.fields.count, 1)
+        XCTAssertEqual(a?.fields.first?.name, "name")
+        XCTAssertEqual(a?.fields.first?.default, "there")
+        XCTAssertEqual(a?.template, "Hi {{name=there}}!")
+        XCTAssertEqual(a?.replacement, "Hi there!") // default used when not prompted
+    }
+
+    func testF4NoValueNoDefaultIsEmpty() {
+        XCTAssertEqual(ExpanderEngine().fill("Hi {{name}}!", values: [:]).text, "Hi !")
+    }
+
+    func testF5SameLabelFilledEverywhere() {
+        XCTAssertEqual(ExpanderEngine().fill("{{x}}-{{x}}", values: ["x": "A"]).text, "A-A")
+    }
+
+    func testF6ExplicitEmptyOverridesDefault() {
+        XCTAssertEqual(ExpanderEngine().fill("[{{x=def}}]", values: ["x": ""]).text, "[]")
+    }
+
+    func testF7FieldsResolveBeforeTokens() {
+        let r = ExpanderEngine(snippets: [snip(";d", "{{date=X}}/{date}")]).matchSuffix(";d")?.replacement ?? ""
+        XCTAssertNotNil(r.range(of: #"^X/\d{4}-\d{2}-\d{2}$"#, options: .regularExpression))
+    }
+
+    func testF8CursorMarkerWithFilledFields() {
+        let r = ExpanderEngine().fill("Dear {{name}},$|\nBye", values: ["name": "Sam"])
+        XCTAssertEqual(r.text, "Dear Sam,\nBye")
+        XCTAssertEqual(r.caretBack, "\nBye".count)
+    }
+
+    func testF9SpacesAroundLabelAndDefaultTrimmed() {
+        let f = ExpanderEngine().parseFields("{{ full name = John Doe }}")
+        XCTAssertEqual(f.first?.name, "full name")
+        XCTAssertEqual(f.first?.default, "John Doe")
+        XCTAssertEqual(ExpanderEngine().fill("{{ full name = John Doe }}", values: [:]).text, "John Doe")
+    }
 }

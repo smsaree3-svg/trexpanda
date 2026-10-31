@@ -108,4 +108,57 @@ class ExpansionSpecificationV1Test {
             assertEquals("caretBack for ${c.after}", c.expected, a.caretBack)
         }
     }
+
+    // ---- Fill-in fields: `{{label}}` / `{{label=default}}` (SPEC section 9) ----
+
+    @Test fun f1_parseFieldsOrderDedupeDefaults() {
+        val fields = eng().parseFields("Hi {{name}}, order {{order=#}} for {{name}}")
+        assertEquals(
+            listOf(ExpanderEngine.Field("name", ""), ExpanderEngine.Field("order", "#")),
+            fields
+        )
+    }
+
+    @Test fun f2_plainSnippetHasNoFields() {
+        assertEquals(emptyList<ExpanderEngine.Field>(), eng().parseFields("Hello"))
+        assertEquals(emptyList<ExpanderEngine.Field>(), eng(snip(";p", "Hello")).matchSuffix(";p")!!.fields)
+    }
+
+    @Test fun f3_matchSurfacesFieldsAndTemplate() {
+        val a = eng(snip(";hi", "Hi {{name=there}}!")).matchSuffix(";hi")!!
+        assertEquals(listOf(ExpanderEngine.Field("name", "there")), a.fields)
+        assertEquals("Hi {{name=there}}!", a.template)
+        assertEquals("Hi there!", a.replacement) // default used when not prompted
+    }
+
+    @Test fun f4_noValueNoDefaultIsEmpty() {
+        assertEquals("Hi !", eng().render("Hi {{name}}!").text)
+    }
+
+    @Test fun f5_sameLabelFilledEverywhere() {
+        assertEquals("A-A", eng().render("{{x}}-{{x}}", mapOf("x" to "A")).text)
+    }
+
+    @Test fun f6_explicitEmptyOverridesDefault() {
+        assertEquals("[]", eng().render("[{{x=def}}]", mapOf("x" to "")).text)
+    }
+
+    @Test fun f7_fieldsResolveBeforeTokens() {
+        val r = eng(snip(";d", "{{date=X}}/{date}")).matchSuffix(";d")!!.replacement
+        assertEquals(true, Regex("^X/\\d{4}-\\d{2}-\\d{2}$").containsMatchIn(r))
+    }
+
+    @Test fun f8_cursorMarkerWithFilledFields() {
+        val r = eng().render("Dear {{name}},\$|\nBye", mapOf("name" to "Sam"))
+        assertEquals("Dear Sam,\nBye", r.text)
+        assertEquals("\nBye".length, r.caretBack)
+    }
+
+    @Test fun f9_spacesAroundLabelAndDefaultTrimmed() {
+        assertEquals(
+            listOf(ExpanderEngine.Field("full name", "John Doe")),
+            eng().parseFields("{{ full name = John Doe }}")
+        )
+        assertEquals("John Doe", eng().render("{{ full name = John Doe }}").text)
+    }
 }

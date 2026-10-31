@@ -29,7 +29,18 @@ class ExpanderEngine(
         val html: String? = null,
         /** Raw attachment JSON ({type,name,mime,data}) to deliver after the text. */
         val attachment: String? = null,
+        /**
+         * Fill-in fields to prompt the user for (empty when the snippet has none).
+         * When non-empty the caller prompts for values, then calls
+         * [render] with those values and the [template] to get the final text.
+         */
+        val fields: List<Field> = emptyList(),
+        /** The raw replacement, so the caller can re-render once it has field values. */
+        val template: String = "",
     )
+
+    /** A fill-in field: its label and its optional default value. */
+    data class Field(val name: String, val default: String)
 
     /** A live-autocomplete candidate. */
     data class Suggestion(
@@ -93,6 +104,8 @@ class ExpanderEngine(
             caretBack = rendered.caretBack,
             html = snippet.html?.let { renderHtml(it) },
             attachment = snippet.attachment,
+            fields = parseFields(snippet.replacement),
+            template = snippet.replacement,
         )
     }
 
@@ -132,6 +145,8 @@ class ExpanderEngine(
             caretBack = rendered.caretBack,
             html = snippet.html?.let { renderHtml(it) },
             attachment = snippet.attachment,
+            fields = parseFields(snippet.replacement),
+            template = snippet.replacement,
         )
     }
 
@@ -186,6 +201,8 @@ class ExpanderEngine(
             caretBack = rendered.caretBack,
             html = snippet.html?.let { renderHtml(it) },
             attachment = snippet.attachment,
+            fields = parseFields(snippet.replacement),
+            template = snippet.replacement,
         )
     }
 
@@ -223,8 +240,11 @@ class ExpanderEngine(
      * Unicode segmenter, the same unit DPAD_LEFT moves the caret by, so a flag,
      * skin-tone, or ZWJ emoji is one step. This matches the desktop and iOS engines.
      */
-    fun render(replacement: String): Rendered {
-        var text = resolveTokens(replacement)
+    fun render(replacement: String, values: Map<String, String?>? = null): Rendered {
+        // Substitute {{fields}} BEFORE {token} resolution so `{{name}}` is never
+        // mistaken for the inner `{name}` token. Without values each field falls
+        // back to its default, then to empty.
+        var text = resolveTokens(substituteFields(replacement, values))
 
         var caretBack = 0
         val marker = text.indexOf("\$|")
@@ -234,6 +254,36 @@ class ExpanderEngine(
             text = text.substring(0, marker) + after
         }
         return Rendered(text, caretBack)
+    }
+
+    /**
+     * Replace every `{{field}}` using the [values] map (keyed by label); fall back
+     * to the field's default, then to empty. Runs before {token} resolution.
+     */
+    private fun substituteFields(text: String, values: Map<String, String?>?): String =
+        FIELD_RE.replace(text) { mr ->
+            val label = mr.groupValues[1].trim()
+            if (values != null && values.containsKey(label)) {
+                values[label] ?: ""
+            } else {
+                mr.groups[2]?.value ?: ""
+            }
+        }
+
+    /**
+     * List the fill-in fields in a replacement, in first-appearance order with
+     * duplicates removed (one prompt per label). Returns an empty list when the
+     * snippet has no fields, so the caller can insert immediately.
+     */
+    fun parseFields(replacement: String): List<Field> {
+        val out = ArrayList<Field>()
+        val seen = HashSet<String>()
+        for (mr in FIELD_RE.findAll(replacement)) {
+            val name = mr.groupValues[1].trim()
+            if (name.isEmpty() || !seen.add(name)) continue
+            out.add(Field(name, mr.groups[2]?.value ?: ""))
+        }
+        return out
     }
 
     /** Grapheme-cluster count via BreakIterator (ICU-backed on Android). */
@@ -248,8 +298,8 @@ class ExpanderEngine(
     }
 
     /** Resolve {tokens} in an HTML replacement and strip every "$|" marker. */
-    fun renderHtml(html: String): String =
-        resolveTokens(html).split("\$|").joinToString("")
+    fun renderHtml(html: String, values: Map<String, String?>? = null): String =
+        resolveTokens(substituteFields(html, values)).split("\$|").joinToString("")
 
     private fun resolveTokens(input: String): String =
         Regex("\\{(\\w+)\\}").replace(input) { mr ->
@@ -267,5 +317,10 @@ class ExpanderEngine(
     companion object {
         private val DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
         private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+        // Fill-in fields: `{{label}}` or `{{label=default}}`. The label holds no
+        // `{`, `}` or `=`; the optional default holds no `{` or `}`. Double braces
+        // keep this distinct from the single-brace {date} dynamic tokens.
+        private val FIELD_RE = Regex("""\{\{\s*([^{}=]+?)\s*(?:=\s*([^{}]*?)\s*)?\}\}""")
     }
 }

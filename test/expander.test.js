@@ -250,4 +250,67 @@ test('suggestions: respects the limit', () => {
   assert.strictEqual(eng.suggestions(3).items.length, 3);
 });
 
+// ---- fill-in fields {{label}} / {{label=default}} -------------------------
+
+test('fill-in: parseFields returns fields in order, de-duplicated', () => {
+  const eng = new Expander([]);
+  assert.deepStrictEqual(
+    eng.parseFields('Hi {{name}}, order {{order=#}} for {{name}}'),
+    [{ name: 'name', default: '' }, { name: 'order', default: '#' }]
+  );
+});
+
+test('fill-in: a plain snippet has an empty fields list', () => {
+  const eng = new Expander([]);
+  assert.deepStrictEqual(eng.parseFields('plain {date} text'), []);
+});
+
+test('fill-in: onChar surfaces fields and the raw template', () => {
+  const eng = new Expander([{ trigger: ';o', replacement: 'Hi {{name}}, order {{order=#}}' }]);
+  const a = typeString(eng, ';o');
+  assert.deepStrictEqual(a.fields, [{ name: 'name', default: '' }, { name: 'order', default: '#' }]);
+  assert.strictEqual(a.template, 'Hi {{name}}, order {{order=#}}');
+});
+
+test('fill-in: with no values the fields fall back to defaults (then empty)', () => {
+  const eng = new Expander([{ trigger: ';o', replacement: 'Hi {{name}}, order {{order=#}}' }]);
+  const a = typeString(eng, ';o');
+  assert.strictEqual(a.replacement, 'Hi , order #');
+});
+
+test('fill-in: render(values) fills every occurrence and keeps defaults', () => {
+  const eng = new Expander([]);
+  const r = eng.render('Hi {{name}}, order {{order=#}} for {{name}}', { name: 'Sam' });
+  assert.strictEqual(r.text, 'Hi Sam, order # for Sam');
+});
+
+test('fill-in: an explicit empty value is respected (not replaced by default)', () => {
+  const eng = new Expander([]);
+  assert.strictEqual(eng.render('[{{x=def}}]', { x: '' }).text, '[]');
+});
+
+test('fill-in: fields do not collide with {token} resolution', () => {
+  const eng = new Expander([]);
+  // The value itself is a dynamic token and resolves after field substitution.
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(eng.render('{{g}}', { g: '{date}' }).text));
+  // And a literal {date} outside a field still resolves.
+  assert(/^Hi Sam on \d{4}-\d{2}-\d{2}$/.test(eng.render('Hi {{n}} on {date}', { n: 'Sam' }).text));
+});
+
+test('fill-in: the caret marker $| still works alongside fields', () => {
+  const eng = new Expander([]);
+  const r = eng.render('Dear {{name}},\n$|\nRegards', { name: 'Mr. Lee' });
+  assert.strictEqual(r.text, 'Dear Mr. Lee,\n\nRegards');
+  assert.strictEqual(r.caretBack, '\nRegards'.length);
+});
+
+test('fill-in: labels and defaults may contain spaces', () => {
+  const eng = new Expander([]);
+  assert.deepStrictEqual(
+    eng.parseFields('{{ full name = Jane Doe }}'),
+    [{ name: 'full name', default: 'Jane Doe' }]
+  );
+  assert.strictEqual(eng.render('{{ full name = Jane Doe }}').text, 'Jane Doe');
+});
+
 console.log('\nexpander: ' + passed + ' passed');
