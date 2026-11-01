@@ -99,6 +99,19 @@ struct ContentView: View {
 struct SnippetRow: View {
     let snippet: Snippet
     var uses: Int = 0
+
+    /// The snippet's name when it has a real one, otherwise what it expands to.
+    /// (The desktop app stores the trigger as the name by default, which said
+    /// nothing useful here.)
+    private var previewText: String {
+        let label = (snippet.label ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = snippet.replacement.replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if label.isEmpty || label.caseInsensitiveCompare(snippet.trigger) == .orderedSame {
+            return text.isEmpty ? (snippet.attachment?.name ?? "") : text
+        }
+        return text.isEmpty ? label : "\(label) · \(text)"
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
@@ -116,7 +129,7 @@ struct SnippetRow: View {
                         .background(Capsule().fill(Color.secondary.opacity(0.2)))
                 }
             }
-            Text(snippet.label ?? snippet.replacement)
+            Text(previewText)
                 .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
         }
         .padding(.vertical, 2)
