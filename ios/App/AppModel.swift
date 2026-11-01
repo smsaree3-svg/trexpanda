@@ -69,8 +69,12 @@ final class AppModel: ObservableObject {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent(att.name)
         do { try data.write(to: file) } catch { return }
-        let text = snippet.replacement.trimmingCharacters(in: .whitespacesAndNewlines)
-        shareFile = ShareFile(url: file, text: text.isEmpty ? nil : snippet.replacement)
+        // Same text the keyboard types: {date} and other tokens filled in, not shown raw.
+        let engine = ExpanderEngine()
+        engine.setSnippets([snippet])
+        let rendered = engine.snippetAction(snippet.trigger)?.replacement ?? snippet.replacement
+        let text = rendered.trimmingCharacters(in: .whitespacesAndNewlines)
+        shareFile = ShareFile(url: file, text: text.isEmpty ? nil : rendered)
     }
 
     // MARK: Editing
