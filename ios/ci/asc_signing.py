@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """App Store signing for CI through the App Store Connect API.
 
-  setup:   create a short-lived Apple Distribution certificate (from a CSR made
-           here) and App Store provisioning profiles for the app and keyboard,
-           install them, and print the profile names as GitHub env lines.
-  cleanup: delete those profiles and revoke the certificate.
+  setup:   create an Apple Distribution certificate (from a CSR made here) and
+           App Store provisioning profiles for the app and keyboard, install
+           them, and print the profile names as GitHub env lines.
+  cleanup: remove the temporary keychain only.
 
-A revoked distribution certificate does not affect builds already uploaded to
-App Store Connect, so no signing material ever has to be stored anywhere.
+The certificate and profiles must STAY VALID until Apple has reviewed the build:
+revoking them right after the upload made App Review reject the build with
+ITMS-90035 "Invalid Signature". Instead, setup retires only OLD CI certificates
+(keeping the newest one, which may sign a build still in review) so the team
+never hits Apple's distribution-certificate limit.
 Needs KEY_ID, ISSUER_ID, KEY_PATH, RUNNER_TEMP, GITHUB_RUN_ID in the env.
 """
 import base64, json, os, pathlib, subprocess, sys, time
@@ -33,8 +36,31 @@ def call(method, path, body=None):
     return r.json() if r.content else {}
 
 
+def retire_old_ci_certificates(keep=1):
+    """Revoke CI-made distribution certificates beyond the newest `keep`.
+
+    CI certificates are the ones used by profiles named "... AppStore CI <run>".
+    Their profiles are deleted with them."""
+    profs = call("GET", "/profiles?filter[profileType]=IOS_APP_STORE&limit=200")["data"]
+    ci = [p for p in profs if " AppStore CI " in p["attributes"]["name"]]
+    by_cert = {}
+    for p in ci:
+        for c in call("GET", f"/profiles/{p['id']}/certificates")["data"]:
+            by_cert.setdefault(c["id"], {"cert": c, "profiles": []})["profiles"].append(p["id"])
+    certs = sorted(by_cert.values(), key=lambda x: x["cert"]["attributes"].get("expirationDate") or "", reverse=True)
+    for old in certs[keep:]:
+        for pid in old["profiles"]:
+            requests.delete(f"{API}/profiles/{pid}", headers={"Authorization": "Bearer " + token()}, timeout=60)
+        requests.delete(f"{API}/certificates/{old['cert']['id']}", headers={"Authorization": "Bearer " + token()}, timeout=60)
+        print(f"Retired old CI certificate {old['cert']['id']}", file=sys.stderr)
+
+
 def setup():
     run = os.environ.get("GITHUB_RUN_ID", str(int(time.time())))
+    try:
+        retire_old_ci_certificates(keep=1)  # the newest may sign a build that's in review
+    except (Exception, SystemExit) as e:
+        print(f"::warning::Could not retire old CI certificates: {e}", file=sys.stderr)
     key, csr = TMP / "dist.key", TMP / "dist.csr"
     subprocess.run(["openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", csr,
                     "-subj", "/CN=Trexpanda CI/O=Lumisha LLC/C=US"], check=True, capture_output=True)
@@ -88,11 +114,8 @@ def setup():
 def cleanup():
     if not STATE.exists():
         return
-    state = json.loads(STATE.read_text())
-    for pid in state.get("profiles", []):
-        requests.delete(f"{API}/profiles/{pid}", headers={"Authorization": "Bearer " + token()}, timeout=60)
-    if state.get("certificate"):
-        requests.delete(f"{API}/certificates/{state['certificate']}", headers={"Authorization": "Bearer " + token()}, timeout=60)
+    # The certificate and profiles are kept: the uploaded build needs them to stay
+    # valid through App Review. Only the local keychain goes.
     kc = TMP / "ci.keychain-db"
     if kc.exists():
         subprocess.run(["security", "delete-keychain", str(kc)])
