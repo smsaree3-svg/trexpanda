@@ -1,29 +1,57 @@
 package com.lumisha.trexpanda
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Typeface
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.format.DateUtils
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
 import android.view.LayoutInflater
 import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CompoundButton
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.PopupMenu
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
+import androidx.core.widget.NestedScrollView
+import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.google.android.material.snackbar.BaseTransientBottomBar
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.textfield.TextInputLayout
+import java.text.NumberFormat
 
 /**
  * The companion app: sign in with Google (Supabase), manage personal snippets,
@@ -36,20 +64,78 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sync: SyncManager
     private lateinit var realtime: RealtimeClient
 
+    private lateinit var root: View
     private lateinit var liveChip: View
+
+    // Account
+    private lateinit var signedOutGroup: View
+    private lateinit var signedInGroup: View
     private lateinit var statusText: TextView
+    private lateinit var accountEmail: TextView
+    private lateinit var accountAvatar: TextView
+    private lateinit var syncStatusText: TextView
+    private lateinit var syncProgress: CircularProgressIndicator
     private lateinit var signInButton: Button
     private lateinit var signOutButton: Button
     private lateinit var syncButton: Button
-    private lateinit var addButton: Button
-    private lateinit var enableKeyboardButton: Button
-    private lateinit var switchKeyboardButton: Button
     private lateinit var cloudSettingsButton: Button
     private lateinit var deleteAccountButton: Button
+
+    // Stats
+    private lateinit var statsCard: View
+    private lateinit var statTimeSaved: TextView
+    private lateinit var statExpansions: TextView
+    private lateinit var statSnippets: TextView
+
+    // Setup
+    private lateinit var setupDoneRow: View
+    private lateinit var setupDoneSummary: TextView
+    private lateinit var setupSteps: View
+    private lateinit var setupProgressText: TextView
+    private lateinit var setupCollapseButton: View
+    private lateinit var stepEnableIcon: ImageView
+    private lateinit var stepEnableStatus: TextView
+    private lateinit var stepSwitchIcon: ImageView
+    private lateinit var stepSwitchStatus: TextView
+    private lateinit var stepAnyIcon: ImageView
+    private lateinit var anyKeyboardStatus: TextView
+    private lateinit var enableKeyboardButton: Button
+    private lateinit var switchKeyboardButton: Button
     private lateinit var anyKeyboardButton: Button
+
+    // Snippets
+    private lateinit var snippetsHeader: TextView
+    private lateinit var sortButton: MaterialButton
+    private lateinit var searchLayout: TextInputLayout
+    private lateinit var searchInput: EditText
     private lateinit var recycler: RecyclerView
     private lateinit var adapter: SnippetAdapter
     private lateinit var emptyState: View
+    private lateinit var noMatchesState: View
+    private lateinit var noMatchesText: TextView
+    private lateinit var noMatchesAddButton: Button
+    private lateinit var addButton: ExtendedFloatingActionButton
+
+    /** Current search text and sort order of the list. */
+    private var query: String = ""
+    private var sortMode = SnippetListUi.Sort.AZ
+
+    /** Setup steps shown even though setup is complete (the user tapped Manage). */
+    private var setupExpandedByUser = false
+
+    /** A sync started from this screen is running (drives the progress indicator). */
+    private var syncing = false
+    private var lastSyncFailed = false
+
+    /**
+     * A snippet the user just deleted. It is hidden from the list right away but
+     * only removed from the store once the Undo snackbar goes away, so an undo
+     * never has to race a sync that already pushed the deletion.
+     */
+    private var pendingDelete: Snippet? = null
+    private var undoBar: Snackbar? = null
+
+    private val uiPrefs by lazy { getSharedPreferences(UI_PREFS, MODE_PRIVATE) }
 
     /** Receives the file picked for the snippet being edited. */
     private var onAttachmentPicked: ((Uri) -> Unit)? = null
@@ -73,23 +159,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        statusText = findViewById(R.id.statusText)
-        signInButton = findViewById(R.id.signInButton)
-        signOutButton = findViewById(R.id.signOutButton)
-        syncButton = findViewById(R.id.syncButton)
-        addButton = findViewById(R.id.addButton)
-        enableKeyboardButton = findViewById(R.id.enableKeyboardButton)
-        switchKeyboardButton = findViewById(R.id.switchKeyboardButton)
-        cloudSettingsButton = findViewById(R.id.cloudSettingsButton)
-        deleteAccountButton = findViewById(R.id.deleteAccountButton)
-        anyKeyboardButton = findViewById(R.id.anyKeyboardButton)
-        liveChip = findViewById(R.id.liveChip)
-        recycler = findViewById(R.id.recycler)
-        emptyState = findViewById(R.id.emptyState)
+        bindViews()
 
+        sortMode = SnippetListUi.Sort.from(uiPrefs.getString(KEY_SORT, null))
         adapter = SnippetAdapter(
             onEdit = { showEditDialog(it) },
-            onDelete = { deleteSnippet(it) },
+            onDelete = { requestDelete(it) },
+            onCopy = { copySnippetText(it) },
         )
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
@@ -110,15 +186,99 @@ class MainActivity : AppCompatActivity() {
         signOutButton.setOnClickListener { realtime.stop(); auth.signOut(); refresh() }
         syncButton.setOnClickListener { runSync(manual = true) }
         addButton.setOnClickListener { showEditDialog(null) }
+        findViewById<View>(R.id.emptyAddButton).setOnClickListener { showEditDialog(null) }
+        noMatchesAddButton.setOnClickListener {
+            showEditDialog(null, prefillTrigger = query.trim().takeIf { SnippetListUi.looksLikeTrigger(it) })
+        }
+        findViewById<View>(R.id.clearSearchButton).setOnClickListener { clearSearch() }
         enableKeyboardButton.setOnClickListener {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
         }
         switchKeyboardButton.setOnClickListener {
             (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
         }
+        findViewById<View>(R.id.setupManageButton).setOnClickListener {
+            setupExpandedByUser = true
+            refreshSetup()
+        }
+        setupCollapseButton.setOnClickListener {
+            setupExpandedByUser = false
+            refreshSetup()
+        }
+
+        sortButton.setOnClickListener { showSortMenu() }
+        searchInput.doAfterTextChanged {
+            query = it?.toString().orEmpty()
+            refreshSnippets()
+        }
+        searchInput.setOnEditorActionListener { v, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                hideKeyboard(v); v.clearFocus(); true
+            } else false
+        }
+
+        // One-handed use: shrink the "New snippet" button while scrolling down
+        // through a long list so it covers less, bring the label back going up.
+        findViewById<NestedScrollView>(R.id.scroll).setOnScrollChangeListener(
+            NestedScrollView.OnScrollChangeListener { _, _, y, _, oldY ->
+                val goingDown = y > oldY + 8
+                val goingUp = y < oldY - 8 || y == 0
+                if (goingDown && addButton.isExtended) addButton.shrink()
+                if (goingUp && !addButton.isExtended) addButton.extend()
+            }
+        )
 
         // Only on a fresh start: after a rotation the code was already exchanged.
         if (savedInstanceState == null) handleAuthRedirect(intent)
+    }
+
+    private fun bindViews() {
+        root = findViewById(R.id.root)
+        liveChip = findViewById(R.id.liveChip)
+
+        signedOutGroup = findViewById(R.id.signedOutGroup)
+        signedInGroup = findViewById(R.id.signedInGroup)
+        statusText = findViewById(R.id.statusText)
+        accountEmail = findViewById(R.id.accountEmail)
+        accountAvatar = findViewById(R.id.accountAvatar)
+        syncStatusText = findViewById(R.id.syncStatusText)
+        syncProgress = findViewById(R.id.syncProgress)
+        signInButton = findViewById(R.id.signInButton)
+        signOutButton = findViewById(R.id.signOutButton)
+        syncButton = findViewById(R.id.syncButton)
+        cloudSettingsButton = findViewById(R.id.cloudSettingsButton)
+        deleteAccountButton = findViewById(R.id.deleteAccountButton)
+
+        statsCard = findViewById(R.id.statsCard)
+        statTimeSaved = findViewById(R.id.statTimeSaved)
+        statExpansions = findViewById(R.id.statExpansions)
+        statSnippets = findViewById(R.id.statSnippets)
+
+        setupDoneRow = findViewById(R.id.setupDoneRow)
+        setupDoneSummary = findViewById(R.id.setupDoneSummary)
+        setupSteps = findViewById(R.id.setupSteps)
+        setupProgressText = findViewById(R.id.setupProgressText)
+        setupCollapseButton = findViewById(R.id.setupCollapseButton)
+        stepEnableIcon = findViewById(R.id.stepEnableIcon)
+        stepEnableStatus = findViewById(R.id.stepEnableStatus)
+        stepSwitchIcon = findViewById(R.id.stepSwitchIcon)
+        stepSwitchStatus = findViewById(R.id.stepSwitchStatus)
+        stepAnyIcon = findViewById(R.id.stepAnyIcon)
+        anyKeyboardStatus = findViewById(R.id.anyKeyboardStatus)
+        enableKeyboardButton = findViewById(R.id.enableKeyboardButton)
+        switchKeyboardButton = findViewById(R.id.switchKeyboardButton)
+        anyKeyboardButton = findViewById(R.id.anyKeyboardButton)
+
+        snippetsHeader = findViewById(R.id.snippetsHeader)
+        sortButton = findViewById(R.id.sortButton)
+        searchLayout = findViewById(R.id.searchLayout)
+        searchInput = findViewById(R.id.searchInput)
+        recycler = findViewById(R.id.recycler)
+        emptyState = findViewById(R.id.emptyState)
+        noMatchesState = findViewById(R.id.noMatchesState)
+        noMatchesText = findViewById(R.id.noMatchesText)
+        noMatchesAddButton = findViewById(R.id.noMatchesAddButton)
+        addButton = findViewById(R.id.addButton)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -137,8 +297,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        // Leaving the screen ends the undo window: apply a pending delete now.
+        commitPendingDelete()
+        undoBar?.dismiss()
+        undoBar = null
         super.onPause()
         realtime.stop()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // The keyboard picker is a system dialog that doesn't pause this screen;
+        // re-check the setup steps when focus comes back from it.
+        if (hasFocus && ::adapter.isInitialized) refreshSetup()
     }
 
     override fun onDestroy() {
@@ -156,7 +327,7 @@ class MainActivity : AppCompatActivity() {
                 val ok = try { auth.completeSignIn(data) } catch (_: Exception) { false }
                 if (ok) keepLocalSnippetsPrivateToAccount()
                 runOnUiThread {
-                    toast(if (ok) "Signed in." else "Sign-in failed. Check your connection and try again.")
+                    snack(if (ok) "Signed in." else "Sign-in failed. Check your connection and try again.")
                     refresh()
                     if (ok) { runSync(manual = true); realtime.start() }
                 }
@@ -179,21 +350,39 @@ class MainActivity : AppCompatActivity() {
 
     /** Sync now. Only a sync the user asked for (or a failure) shows a message. */
     private fun runSync(manual: Boolean = false) {
-        syncButton.isEnabled = false
+        syncing = true
+        updateSyncStatus()
         sync.sync { success, message ->
             runOnUiThread {
-                syncButton.isEnabled = true
-                if (message != null && (manual || !success) && message != "Sync already in progress.") toast(message)
+                // The sync already running reports back (and re-runs) on its own.
+                if (message == "Sync already in progress.") return@runOnUiThread
+                syncing = false
+                if (success) {
+                    lastSyncFailed = false
+                    uiPrefs.edit().putLong(KEY_LAST_SYNC, System.currentTimeMillis()).apply()
+                } else {
+                    lastSyncFailed = auth.isSignedIn
+                }
+                if (message != null && (manual || !success)) snack(message)
                 refresh()
             }
         }
     }
 
     private fun refresh() {
+        refreshAccount()
+        refreshSetup()
+        refreshSnippets()
+    }
+
+    // ---- account -------------------------------------------------------------
+
+    private fun refreshAccount() {
         val signedIn = auth.isSignedIn
+        signedOutGroup.visibility = if (signedIn) View.GONE else View.VISIBLE
+        signedInGroup.visibility = if (signedIn) View.VISIBLE else View.GONE
         signInButton.visibility = if (signedIn) View.GONE else View.VISIBLE
         signOutButton.visibility = if (signedIn) View.VISIBLE else View.GONE
-        syncButton.isEnabled = signedIn
         liveChip.visibility = if (signedIn) View.VISIBLE else View.GONE
         deleteAccountButton.visibility = if (signedIn) View.VISIBLE else View.GONE
         // Store builds ship with the cloud settings baked in, so the developer
@@ -205,18 +394,229 @@ class MainActivity : AppCompatActivity() {
             signedIn -> "Signed in as ${auth.userEmail ?: "you"}"
             else -> "Not signed in"
         }
+        val email = auth.userEmail
+        accountEmail.text = email ?: "Signed in"
+        accountAvatar.text = email?.trim()?.firstOrNull()?.uppercaseChar()?.toString() ?: "✓"
+        if (!signedIn) { syncing = false; lastSyncFailed = false }
+        updateSyncStatus()
+    }
+
+    private fun updateSyncStatus() {
+        val signedIn = auth.isSignedIn
+        syncProgress.visibility = if (syncing && signedIn) View.VISIBLE else View.GONE
+        syncButton.isEnabled = signedIn && !syncing
+        syncButton.text = if (syncing && signedIn) "Syncing…" else "Sync now"
+        val last = uiPrefs.getLong(KEY_LAST_SYNC, 0L)
+        syncStatusText.text = when {
+            syncing -> "Syncing your snippets…"
+            lastSyncFailed -> "Couldn't sync. Check your connection and tap Sync now."
+            last > 0L -> "Synced " + relativeTime(last)
+            else -> "Not synced yet"
+        }
+        syncStatusText.setTextColor(
+            ContextCompat.getColor(this, if (lastSyncFailed && !syncing) R.color.warning else R.color.muted)
+        )
+    }
+
+    private fun relativeTime(time: Long): String {
+        val now = System.currentTimeMillis()
+        return if (now - time < DateUtils.MINUTE_IN_MILLIS) "just now"
+        else DateUtils.getRelativeTimeSpanString(time, now, DateUtils.MINUTE_IN_MILLIS).toString()
+    }
+
+    // ---- setup (keyboard + any-keyboard mode) -----------------------------------
+
+    private fun refreshSetup() {
+        val imeEnabled = isKeyboardEnabled()
+        val imeSelected = imeEnabled && isKeyboardSelected()
+        val anyOn = isAnyKeyboardModeOn()
+        val anyRunning = anyOn && isAnyKeyboardModeRunning()
+
+        setStepState(stepEnableIcon, done = imeEnabled)
+        stepEnableStatus.text = if (imeEnabled) "Turned on." else "In Settings, switch on Trexpanda Keyboard."
+        enableKeyboardButton.text = if (imeEnabled) "Settings" else "Enable"
+
+        setStepState(stepSwitchIcon, done = imeSelected)
+        stepSwitchStatus.text = when {
+            imeSelected -> "Trexpanda is your keyboard right now."
+            !imeEnabled -> "After step 1, pick Trexpanda as your keyboard."
+            else -> "Pick Trexpanda as your keyboard."
+        }
+
+        setStepState(stepAnyIcon, done = anyRunning, warn = anyOn && !anyRunning)
+        anyKeyboardStatus.text = when {
+            !anyOn -> "Optional. Expands your triggers while you type with your usual keyboard."
+            anyRunning -> "On. Your triggers expand in any keyboard."
+            else -> "Stopped by the phone. Tap below to turn it back on."
+        }
         anyKeyboardButton.text = when {
-            !isAnyKeyboardModeOn() -> "Use with Gboard or any keyboard"
-            isAnyKeyboardModeRunning() -> "Works with any keyboard: On (tap to manage)"
+            !anyOn -> "Use with Gboard or any keyboard"
+            anyRunning -> "Works with any keyboard: On (tap to manage)"
             else -> "Any-keyboard mode was stopped by the phone: tap to fix"
         }
-        val items = store.getPersonal().sortedBy { it.trigger ?: "" }
+
+        val complete = (imeEnabled && imeSelected) || anyRunning
+        if (!complete) setupExpandedByUser = false
+        val showSteps = !complete || setupExpandedByUser
+        setupSteps.visibility = if (showSteps) View.VISIBLE else View.GONE
+        setupDoneRow.visibility = if (showSteps) View.GONE else View.VISIBLE
+        setupCollapseButton.visibility = if (complete && showSteps) View.VISIBLE else View.GONE
+        setupProgressText.text = when {
+            complete -> "All set. You can start typing triggers."
+            else -> "${listOf(imeEnabled, imeSelected).count { it }} of 2 steps done, or turn on any-keyboard mode"
+        }
+        setupDoneSummary.text = when {
+            imeSelected && anyRunning -> "Trexpanda Keyboard and any-keyboard mode are on"
+            imeSelected -> "Trexpanda Keyboard is ready"
+            else -> "Works with your usual keyboard"
+        }
+    }
+
+    private fun setStepState(icon: ImageView, done: Boolean, warn: Boolean = false) {
+        icon.setImageResource(
+            when {
+                done -> R.drawable.ic_check_circle
+                warn -> R.drawable.ic_warning
+                else -> R.drawable.ic_circle_outline
+            }
+        )
+        val color = when {
+            done -> R.color.success
+            warn -> R.color.warning
+            else -> R.color.subtle
+        }
+        icon.imageTintList = ColorStateList.valueOf(ContextCompat.getColor(this, color))
+    }
+
+    /** Trexpanda Keyboard is switched on in Settings › Keyboards. */
+    private fun isKeyboardEnabled(): Boolean = try {
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .enabledInputMethodList.any { it.packageName == packageName }
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Trexpanda Keyboard is the keyboard currently in use. */
+    private fun isKeyboardSelected(): Boolean = try {
+        val id = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+        id != null && ComponentName.unflattenFromString(id)?.packageName == packageName
+    } catch (_: Exception) {
+        false
+    }
+
+    // ---- snippet list ------------------------------------------------------------
+
+    private fun refreshSnippets() {
+        val hiddenId = pendingDelete?.id
+        val all = store.getPersonal().filter { it.id != hiddenId }
         val usage = UsageStats.combined(this)
-        adapter.submit(items, usage)
+        val q = query.trim()
+        val shown = SnippetListUi.sort(all.filter { SnippetListUi.matches(it, q) }, sortMode, usage)
+        adapter.submit(shown, usage)
+
+        // Stats
         val exp = usage.optJSONObject("totals")?.optLong("expansions") ?: 0L
-        findViewById<android.widget.TextView>(R.id.timeSavedText).text =
-            if (exp > 0) "⏱ ${UsageStats.formatDuration(UsageStats.minutesSaved(usage))} saved" else ""
-        emptyState.visibility = if (items.isEmpty()) View.VISIBLE else View.GONE
+        val saved = if (exp > 0) UsageStats.formatDuration(UsageStats.minutesSaved(usage)) else "0 min"
+        statTimeSaved.text = saved
+        statExpansions.text = NumberFormat.getIntegerInstance().format(exp)
+        statSnippets.text = NumberFormat.getIntegerInstance().format(all.size.toLong())
+        findViewById<View>(R.id.statTimeTile).contentDescription = "Time saved: $saved"
+        findViewById<View>(R.id.statExpansionsTile).contentDescription = "Expansions: $exp"
+        findViewById<View>(R.id.statSnippetsTile).contentDescription = "Snippets: ${all.size}"
+        statsCard.visibility = if (all.isEmpty() && exp == 0L) View.GONE else View.VISIBLE
+
+        // Header, search and sort
+        snippetsHeader.text = if (all.isEmpty()) "MY SNIPPETS" else "MY SNIPPETS · ${all.size}"
+        val hasAny = all.isNotEmpty()
+        searchLayout.visibility = if (hasAny) View.VISIBLE else View.GONE
+        sortButton.visibility = if (hasAny) View.VISIBLE else View.GONE
+        sortButton.text = sortMode.label
+        sortButton.contentDescription = "Sort: ${sortMode.label}"
+
+        // Empty states
+        emptyState.visibility = if (hasAny) View.GONE else View.VISIBLE
+        val noMatches = hasAny && shown.isEmpty()
+        noMatchesState.visibility = if (noMatches) View.VISIBLE else View.GONE
+        if (noMatches) {
+            noMatchesText.text = "No snippets match “$q”"
+            noMatchesAddButton.text =
+                if (SnippetListUi.looksLikeTrigger(q)) "Create $q" else "New snippet"
+        }
+    }
+
+    private fun showSortMenu() {
+        val popup = PopupMenu(this, sortButton)
+        popup.menuInflater.inflate(R.menu.menu_sort, popup.menu)
+        val checked = when (sortMode) {
+            SnippetListUi.Sort.AZ -> R.id.sort_az
+            SnippetListUi.Sort.RECENT -> R.id.sort_recent
+            SnippetListUi.Sort.MOST_USED -> R.id.sort_used
+        }
+        popup.menu.findItem(checked)?.isChecked = true
+        popup.setOnMenuItemClickListener { item ->
+            val mode = when (item.itemId) {
+                R.id.sort_az -> SnippetListUi.Sort.AZ
+                R.id.sort_recent -> SnippetListUi.Sort.RECENT
+                R.id.sort_used -> SnippetListUi.Sort.MOST_USED
+                else -> return@setOnMenuItemClickListener false
+            }
+            sortMode = mode
+            uiPrefs.edit().putString(KEY_SORT, mode.key).apply()
+            refreshSnippets()
+            true
+        }
+        popup.show()
+    }
+
+    private fun clearSearch() {
+        searchInput.setText("")
+        searchInput.clearFocus()
+        hideKeyboard(searchInput)
+    }
+
+    private fun hideKeyboard(v: View) {
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(v.windowToken, 0)
+    }
+
+    private fun copySnippetText(s: Snippet) {
+        if (s.replacement.isEmpty()) { snack("This snippet has no text to copy."); return }
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText(s.label ?: s.trigger ?: "Snippet", s.replacement))
+        // Android 13+ shows its own "Copied" confirmation.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) snack("Copied ${s.trigger ?: "snippet"} text.")
+    }
+
+    /**
+     * Delete with Undo: hide the snippet now, remove it for real when the
+     * snackbar goes away without Undo (or the user leaves the screen).
+     */
+    private fun requestDelete(s: Snippet) {
+        commitPendingDelete()
+        pendingDelete = s
+        refreshSnippets()
+        val bar = Snackbar.make(root, "Deleted ${s.trigger ?: "snippet"}", Snackbar.LENGTH_LONG)
+            .setAction("Undo") {
+                if (pendingDelete?.id == s.id) {
+                    pendingDelete = null
+                    refreshSnippets()
+                }
+            }
+            .addCallback(object : BaseTransientBottomBar.BaseCallback<Snackbar>() {
+                override fun onDismissed(transientBottomBar: Snackbar?, event: Int) {
+                    if (undoBar === transientBottomBar) undoBar = null
+                    if (event != BaseTransientBottomBar.BaseCallback.DISMISS_EVENT_ACTION && pendingDelete?.id == s.id) commitPendingDelete()
+                }
+            })
+        if (addButton.isShown) bar.anchorView = addButton
+        undoBar = bar
+        bar.show()
+    }
+
+    private fun commitPendingDelete() {
+        val s = pendingDelete ?: return
+        pendingDelete = null
+        deleteSnippet(s)
     }
 
     /**
@@ -327,7 +727,7 @@ class MainActivity : AppCompatActivity() {
                         realtime.stop()
                         auth.signOut()
                         refresh()
-                        toast("Your account has been deleted.")
+                        snack("Your account has been deleted.")
                     } else {
                         AlertDialog.Builder(this)
                             .setTitle("Can't delete yet")
@@ -377,50 +777,121 @@ class MainActivity : AppCompatActivity() {
 
     // ---- snippet editing -----------------------------------------------------
 
-    private fun showEditDialog(existing: Snippet?) {
+    private fun showEditDialog(existing: Snippet?, prefillTrigger: String? = null) {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_edit_snippet, null)
+        val triggerLayout = view.findViewById<TextInputLayout>(R.id.triggerLayout)
+        val replacementLayout = view.findViewById<TextInputLayout>(R.id.replacementLayout)
         val triggerInput = view.findViewById<EditText>(R.id.triggerInput)
         val replacementInput = view.findViewById<EditText>(R.id.replacementInput)
         val labelInput = view.findViewById<EditText>(R.id.labelInput)
         val enabledCheck = view.findViewById<CompoundButton>(R.id.enabledCheck)
+        val previewText = view.findViewById<TextView>(R.id.previewText)
         val attachmentName = view.findViewById<TextView>(R.id.attachmentName)
         val attachButton = view.findViewById<Button>(R.id.attachButton)
         val removeAttachment = view.findViewById<Button>(R.id.removeAttachmentButton)
 
+        // Other snippets, for the "trigger already used" check.
+        val others = store.getPersonal().filter { it.id != existing?.id && it.id != pendingDelete?.id }
+
         // The image/file synced with this snippet (same 1 MB limit as the desktop app).
         var attachment: String? = existing?.attachment
+
+        fun updatePreview() {
+            val t = triggerInput.text?.toString()?.trim().orEmpty()
+            val r = replacementInput.text?.toString().orEmpty()
+            val att = SnippetAttachment.parse(attachment)
+            val accent = ContextCompat.getColor(this, R.color.accent)
+            val muted = ContextCompat.getColor(this, R.color.muted)
+            val sb = SpannableStringBuilder()
+            fun span(text: String, vararg spans: Any) {
+                val start = sb.length
+                sb.append(text)
+                spans.forEach { sb.setSpan(it, start, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+            }
+            if (t.isEmpty() && r.isEmpty() && att == null) {
+                span("Type a trigger and the text it should become.", ForegroundColorSpan(muted))
+            } else {
+                span("Type ", ForegroundColorSpan(muted))
+                span(t.ifEmpty { "…" }, TypefaceSpan("monospace"), StyleSpan(Typeface.BOLD), ForegroundColorSpan(accent))
+                span("  →\n", ForegroundColorSpan(muted))
+                if (r.isEmpty()) span("(no text)", ForegroundColorSpan(muted)) else sb.append(r)
+                if (att != null) span("\n📎 " + att.name, ForegroundColorSpan(accent))
+                if (!enabledCheck.isChecked) span("\nOff: won't expand until you turn it on.", ForegroundColorSpan(muted))
+            }
+            previewText.text = sb
+        }
+
         fun showAttachment() {
             val att = SnippetAttachment.parse(attachment)
             attachmentName.text = if (att == null) "No attachment"
                 else "📎 " + att.name + (if (att.isImage) " (image)" else " (file)")
             attachButton.text = if (att == null) "📎 Attach image or file" else "Replace"
             removeAttachment.visibility = if (att == null) View.GONE else View.VISIBLE
+            updatePreview()
         }
-        showAttachment()
         attachButton.setOnClickListener {
             onAttachmentPicked = { uri ->
                 val att = readAttachment(uri)
-                if (att != null) { attachment = att.toJson(); showAttachment() }
+                if (att != null) { attachment = att.toJson(); replacementLayout.error = null; showAttachment() }
             }
             try { pickAttachment.launch(arrayOf("*/*")) } catch (_: Exception) { toast("No file picker available.") }
         }
         removeAttachment.setOnClickListener { attachment = null; showAttachment() }
 
-        existing?.let {
-            triggerInput.setText(it.trigger)
-            replacementInput.setText(it.replacement)
-            labelInput.setText(it.label)
-            enabledCheck.isChecked = it.enabled
+        if (existing != null) {
+            triggerInput.setText(existing.trigger)
+            replacementInput.setText(existing.replacement)
+            labelInput.setText(existing.label)
+            enabledCheck.isChecked = existing.enabled
+        } else if (!prefillTrigger.isNullOrEmpty()) {
+            triggerInput.setText(prefillTrigger)
+        }
+        showAttachment()
+
+        fun triggerError(requireNonEmpty: Boolean): String? = SnippetListUi.triggerError(
+            triggerInput.text?.toString().orEmpty(), existing?.trigger, others, requireNonEmpty
+        )
+
+        // Live feedback: preview follows typing, trigger problems show as you type.
+        triggerInput.doAfterTextChanged {
+            triggerLayout.error = triggerError(requireNonEmpty = false)
+            updatePreview()
+        }
+        replacementInput.doAfterTextChanged {
+            replacementLayout.error = null
+            updatePreview()
+        }
+        enabledCheck.setOnCheckedChangeListener { _, _ -> updatePreview() }
+        // Show a clash right away when opening a pre-filled trigger.
+        if (existing == null && !prefillTrigger.isNullOrEmpty()) {
+            triggerLayout.error = triggerError(requireNonEmpty = false)
         }
 
-        AlertDialog.Builder(this)
+        val builder = MaterialAlertDialogBuilder(this)
             .setTitle(if (existing == null) "New snippet" else "Edit snippet")
             .setView(view)
-            .setPositiveButton("Save") { _, _ ->
-                val trigger = triggerInput.text.toString().trim()
-                val replacement = replacementInput.text.toString()
-                if (trigger.isEmpty()) { toast("Trigger is required."); return@setPositiveButton }
-                val label = labelInput.text.toString().trim().ifEmpty { null }
+            // Set below, so a validation error keeps the dialog open.
+            .setPositiveButton("Save", null)
+            .setNegativeButton("Cancel", null)
+        if (existing != null) builder.setNeutralButton("Delete") { _, _ -> requestDelete(existing) }
+        val dialog = builder.create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                val trigger = triggerInput.text?.toString().orEmpty().trim()
+                val replacement = replacementInput.text?.toString().orEmpty()
+
+                val tErr = triggerError(requireNonEmpty = true)
+                triggerLayout.error = tErr
+                // Text is required unless there's an attachment, or the text was
+                // left as it was (e.g. a rich-text snippet made on the desktop).
+                val rErr = if (replacement.isBlank() && attachment == null && existing?.replacement != replacement)
+                    "Enter the text to insert, or attach a file." else null
+                replacementLayout.error = rErr
+                if (tErr != null) { triggerInput.requestFocus(); return@setOnClickListener }
+                if (rErr != null) { replacementInput.requestFocus(); return@setOnClickListener }
+
+                val label = labelInput.text?.toString().orEmpty().trim().ifEmpty { null }
                 val updated = (existing ?: Snippet(id = "", trigger = trigger)).copy(
                     trigger = trigger,
                     replacement = replacement,
@@ -434,9 +905,17 @@ class MainActivity : AppCompatActivity() {
                     enabled = enabledCheck.isChecked,
                 )
                 saveSnippet(existing, updated)
+                dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL)?.setTextColor(ContextCompat.getColor(this, R.color.danger))
+        }
+
+        @Suppress("DEPRECATION")
+        val softInput = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+            (if (existing == null) WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE else 0)
+        dialog.window?.setSoftInputMode(softInput)
+        if (existing == null) triggerInput.requestFocus()
+        dialog.show()
     }
 
     /** Read a picked file into an attachment, or explain why it can't be used. */
@@ -489,5 +968,19 @@ class MainActivity : AppCompatActivity() {
         if (auth.isSignedIn) runSync()
     }
 
+    /** Toast: for messages shown while a dialog may be on top of the screen. */
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    /** Snackbar above the "New snippet" button, clear of the navigation bar. */
+    private fun snack(msg: String) {
+        val bar = Snackbar.make(root, msg, Snackbar.LENGTH_SHORT)
+        if (addButton.isShown) bar.anchorView = addButton
+        bar.show()
+    }
+
+    companion object {
+        private const val UI_PREFS = "trexpanda_ui"
+        private const val KEY_SORT = "sort"
+        private const val KEY_LAST_SYNC = "last_sync_at"
+    }
 }

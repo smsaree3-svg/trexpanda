@@ -5,12 +5,18 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.appcompat.widget.PopupMenu
 import androidx.recyclerview.widget.RecyclerView
 
-/** RecyclerView adapter for the snippet list in [MainActivity]. */
+/**
+ * RecyclerView adapter for the snippet list in [MainActivity].
+ *
+ * Tap a row to edit it; long-press it (or tap ⋮) for Edit / Copy text / Delete.
+ */
 class SnippetAdapter(
     private val onEdit: (Snippet) -> Unit,
     private val onDelete: (Snippet) -> Unit,
+    private val onCopy: (Snippet) -> Unit = {},
 ) : RecyclerView.Adapter<SnippetAdapter.VH>() {
 
     private val items = mutableListOf<Snippet>()
@@ -33,19 +39,68 @@ class SnippetAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
 
     inner class VH(view: View) : RecyclerView.ViewHolder(view) {
+        private val content: View = view.findViewById(R.id.itemContent)
         private val trigger: TextView = view.findViewById(R.id.itemTrigger)
+        private val uses: TextView = view.findViewById(R.id.itemUses)
+        private val disabled: TextView = view.findViewById(R.id.itemDisabled)
+        private val name: TextView = view.findViewById(R.id.itemName)
         private val preview: TextView = view.findViewById(R.id.itemPreview)
-        private val delete: ImageButton = view.findViewById(R.id.itemDelete)
+        private val attachment: TextView = view.findViewById(R.id.itemAttachment)
+        private val more: ImageButton = view.findViewById(R.id.itemMore)
 
         fun bind(s: Snippet) {
-            val uses = UsageStats.countFor(usage, s)
-            trigger.text = if (uses > 0) "${s.trigger}  ·  used ${uses}×" else s.trigger
+            val trig = s.trigger.orEmpty()
+            trigger.text = trig
+
+            val count = UsageStats.countFor(usage, s)
+            uses.visibility = if (count > 0) View.VISIBLE else View.GONE
+            uses.text = "used $count×"
+
+            disabled.visibility = if (s.enabled) View.GONE else View.VISIBLE
+
+            // Only show a name the user actually gave it (not a copy of the trigger).
+            val label = s.label?.trim().orEmpty()
+            val hasName = label.isNotEmpty() && !label.equals(trig, ignoreCase = true)
+            name.visibility = if (hasName) View.VISIBLE else View.GONE
+            name.text = label
+
             val raw = s.replacement.replace(Regex("\\s+"), " ").trim()
-            val att = SnippetAttachment.parse(s.attachment)?.let { "📎 ${it.name}  " } ?: ""
-            preview.text = if (s.enabled) att + raw else "$att$raw  (disabled)"
-            preview.alpha = if (s.enabled) 1f else 0.5f
+            val att = SnippetAttachment.parse(s.attachment)
+            preview.visibility = if (raw.isEmpty() && att != null) View.GONE else View.VISIBLE
+            preview.text = raw.ifEmpty { "(no text)" }
+
+            attachment.visibility = if (att != null) View.VISIBLE else View.GONE
+            attachment.text = att?.name.orEmpty()
+
+            content.alpha = if (s.enabled) 1f else 0.55f
+
+            itemView.contentDescription = buildString {
+                append("Snippet ").append(trig)
+                if (hasName) append(", ").append(label)
+                if (!s.enabled) append(", turned off")
+                if (count > 0) append(", used ").append(count).append(" times")
+                if (att != null) append(", with attachment ").append(att.name)
+                append(". ").append(raw.take(120))
+            }
+
             itemView.setOnClickListener { onEdit(s) }
-            delete.setOnClickListener { onDelete(s) }
+            itemView.setOnLongClickListener { showMenu(it, s); true }
+            more.contentDescription = "More options for $trig"
+            more.setOnClickListener { showMenu(it, s) }
+        }
+
+        private fun showMenu(anchor: View, s: Snippet) {
+            val popup = PopupMenu(anchor.context, anchor)
+            popup.menuInflater.inflate(R.menu.menu_snippet, popup.menu)
+            popup.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    R.id.action_edit -> { onEdit(s); true }
+                    R.id.action_copy -> { onCopy(s); true }
+                    R.id.action_delete -> { onDelete(s); true }
+                    else -> false
+                }
+            }
+            popup.show()
         }
     }
 }

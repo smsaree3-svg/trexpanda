@@ -13,6 +13,9 @@
     <color name="brandOn">#FFFFFF</color>
     <color name="accent">#46B4FF</color>
     <color name="danger">#FF6B81</color>
+    <color name="success">#46D39A</color>
+    <color name="warning">#FFB547</color>
+    <color name="subtle">#7F90B3</color>
 
     <color name="ic_launcher_background">#FFFFFF</color>
 

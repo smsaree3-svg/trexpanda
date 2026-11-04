@@ -72,11 +72,13 @@ class StoreScreenshots {
         val activity = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         ShadowLooper.idleMainLooper()
         val (w, h) = screen()
-        // Scroll so the snippet list is in view below the setup buttons.
-        val recycler = activity.findViewById<RecyclerView>(R.id.recycler)
+        // Scroll so the list (its header, search and sort, then the rows) fills the shot.
+        val header = activity.findViewById<View>(R.id.snippetsHeader)
         val scroll = activity.findViewById<View>(R.id.scroll)
         render(activity.window.decorView, w, h)
-        scroll.scrollTo(0, (recycler.top - (160 * activity.resources.displayMetrics.density).toInt()).coerceAtLeast(0))
+        // The header sits in a row inside the scroll's content column.
+        val headerTop = (header.parent as View).top
+        scroll.scrollTo(0, (headerTop - (12 * activity.resources.displayMetrics.density).toInt()).coerceAtLeast(0))
         save(render(activity.window.decorView, w, h), "2-snippets.png")
         scroll.scrollTo(0, 0)
         save(render(activity.window.decorView, w, h), "1-home.png")
