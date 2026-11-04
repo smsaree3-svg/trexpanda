@@ -25,4 +25,6 @@ enum AppConfig {
 
     static let privacyURL = URL(string: "https://trexpanda.com/privacy.html")!
     static let deleteInfoURL = URL(string: "https://trexpanda.com/delete-account/")!
+    static let supportEmail = "hello@trexpanda.com"
+    static let supportURL = URL(string: "mailto:hello@trexpanda.com?subject=Trexpanda%20for%20iPhone")!
 }

@@ -15,7 +15,13 @@ struct TrexpandaApp: App {
                 .onOpenURL { model.openShareLink($0) }
         }
         .onChange(of: scenePhase) { phase in
-            if phase == .active { Task { await model.sync() } }
+            if phase == .active {
+                Task {
+                    await model.sync()
+                    // The keyboard records uses in its own process: pick them up.
+                    model.reloadUsage()
+                }
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 /// App state: the user's snippets (shared with the keyboard through the App
 /// Group), sign-in, sync and account deletion.
@@ -10,6 +11,20 @@ final class AppModel: ObservableObject {
     @Published private(set) var usage: UsageData = UsageLog.combined()
     @Published var isSyncing = false
     @Published var alert: AlertItem?
+    /// When the last sync finished without an error (this launch only).
+    @Published private(set) var lastSyncedAt: Date?
+    /// The last sync's error, cleared by the next successful sync.
+    @Published private(set) var syncError: String?
+    /// True once the keyboard has expanded a snippet on this iPhone, which means
+    /// it is installed and has Full Access (it can't record uses without it).
+    @Published private(set) var keyboardUsedHere = false
+    /// Hides the keyboard setup card on the home screen.
+    @Published var setupCardDismissed = false { didSet { savePrefs() } }
+    /// How the snippet list is ordered.
+    @Published var sortOrder: SnippetSort = .alphabetical { didSet { savePrefs() } }
+
+    /// Store screenshots (simulator only): sample snippets and usage, nothing saved.
+    let isDemo = ProcessInfo.processInfo.arguments.contains("-TrexDemoSnippets")
 
     let auth = AuthService()
     private var tombstones: [Tombstone] = []
@@ -25,9 +40,15 @@ final class AppModel: ObservableObject {
         // Ids are compared as strings with the server's lower-case uuids.
         snippets = SharedStore.loadSnippets().map { var s = $0; s.id = s.id.lowercased(); return s }
         tombstones = SharedStore.loadTombstones().map { Tombstone(id: $0.id.lowercased(), deletedAt: $0.deletedAt) }
+        let prefs = Self.loadPrefs()
+        setupCardDismissed = prefs.setupCardDismissed ?? false
+        sortOrder = prefs.sortOrder.flatMap(SnippetSort.init(rawValue:)) ?? .alphabetical
+        keyboardUsedHere = UsageLog.local().totals.expansions > 0
         // Store screenshots (simulator only): show sample snippets, save nothing.
-        if ProcessInfo.processInfo.arguments.contains("-TrexDemoSnippets") {
+        if isDemo {
             snippets = Self.demoSnippets
+            usage = Self.demoUsage
+            keyboardUsedHere = true
             return
         }
         if snippets.isEmpty && tombstones.isEmpty && !auth.isSignedIn {
@@ -37,6 +58,56 @@ final class AppModel: ObservableObject {
     }
 
     var sortedSnippets: [Snippet] { snippets.sorted { $0.trigger.lowercased() < $1.trigger.lowercased() } }
+
+    /// Snippets matching `query` (trigger, name, text or file name), in `sortOrder`.
+    func visibleSnippets(matching query: String) -> [Snippet] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = sortedSnippets // A–Z, also the tie-breaker for the other orders
+        let filtered = q.isEmpty ? base : base.filter { s in
+            s.trigger.localizedCaseInsensitiveContains(q)
+                || (s.label ?? "").localizedCaseInsensitiveContains(q)
+                || s.replacement.localizedCaseInsensitiveContains(q)
+                || (s.attachment?.name ?? "").localizedCaseInsensitiveContains(q)
+        }
+        let rank = Dictionary(filtered.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func byName(_ a: Snippet, _ b: Snippet) -> Bool { (rank[a.id] ?? 0) < (rank[b.id] ?? 0) }
+        switch sortOrder {
+        case .alphabetical:
+            return filtered
+        case .recentlyEdited:
+            return filtered.sorted { $0.updatedAt != $1.updatedAt ? $0.updatedAt > $1.updatedAt : byName($0, $1) }
+        case .mostUsed:
+            return filtered.sorted {
+                let a = usage.count(for: $0), b = usage.count(for: $1)
+                return a != b ? a > b : byName($0, $1)
+            }
+        case .recentlyUsed:
+            return filtered.sorted {
+                let a = usage.lastUsedAt(for: $0) ?? "", b = usage.lastUsedAt(for: $1) ?? ""
+                return a != b ? a > b : byName($0, $1)
+            }
+        }
+    }
+
+    /// The text the keyboard would type for this snippet, with {date} and other
+    /// tokens filled in and fill-in fields at their defaults.
+    func renderedText(_ snippet: Snippet) -> String {
+        ExpanderEngine().fill(snippet.replacement, values: [:]).text
+    }
+
+    /// Re-read use counts written by the keyboard (it runs in another process).
+    func reloadUsage() {
+        guard !isDemo else { return }
+        usage = UsageLog.combined()
+        keyboardUsedHere = UsageLog.local().totals.expansions > 0
+    }
+
+    /// Pull to refresh: sync (when signed in) and pick up new use counts.
+    func refresh() async {
+        await sync()
+        reloadUsage()
+        if auth.isSignedIn && syncError == nil { Haptics.success() }
+    }
 
     // MARK: Sharing attachments
 
@@ -119,6 +190,8 @@ final class AppModel: ObservableObject {
     func signOut() {
         auth.signOut()
         status = nil
+        lastSyncedAt = nil
+        syncError = nil
     }
 
     /// An edit arrived while a sync was running: sync again when it finishes, so
@@ -151,8 +224,11 @@ final class AppModel: ObservableObject {
             }
             usage = UsageLog.combined()
             status = "Synced \(merged.live.count) snippet\(merged.live.count == 1 ? "" : "s")"
+            lastSyncedAt = Date()
+            syncError = nil
         } catch {
             status = "Sync failed: \(error.localizedDescription)"
+            syncError = error.localizedDescription
         }
     }
 
@@ -215,10 +291,51 @@ final class AppModel: ObservableObject {
                 persist()
             }
             status = nil
+            lastSyncedAt = nil
+            syncError = nil
             alert = .init(title: "Account deleted", message: "Your Trexpanda account and its cloud data have been deleted.")
         } catch {
             alert = .init(title: "Couldn't delete your account", message: "Check your connection and try again.")
         }
+    }
+
+    // MARK: UI preferences
+    //
+    // A small file rather than UserDefaults, like `lastSyncedUser` (so no
+    // privacy-manifest "required reason" entry is needed).
+
+    private struct Prefs: Codable {
+        var setupCardDismissed: Bool?
+        var sortOrder: String?
+    }
+
+    private static var prefsURL: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("ui-prefs.json")
+    }
+
+    private static func loadPrefs() -> Prefs {
+        guard let url = prefsURL, let data = try? Data(contentsOf: url),
+              let p = try? JSONDecoder().decode(Prefs.self, from: data) else { return Prefs() }
+        return p
+    }
+
+    private func savePrefs() {
+        guard !isDemo, let url = Self.prefsURL,
+              let data = try? JSONEncoder().encode(Prefs(setupCardDismissed: setupCardDismissed,
+                                                         sortOrder: sortOrder.rawValue)) else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: url, options: .atomic)
+    }
+
+    private static var demoUsage: UsageData {
+        var u = UsageData()
+        let counts: [String: Int] = [";ty": 128, ";sig": 64, ";addr": 42, ";track": 37, ";email": 23,
+                                     ";date": 18, ";meet": 12, ";price": 9]
+        for (trigger, n) in counts { u.byKey["t:" + trigger] = UsageEntry(count: n, lastUsedAt: nil) }
+        u.totals.expansions = counts.values.reduce(0, +)
+        u.totals.savedChars = 21_500
+        return u
     }
 
     private static let demoSnippets: [Snippet] = [
@@ -237,4 +354,41 @@ final class AppModel: ObservableObject {
         Snippet(trigger: ";date", replacement: "{date}", label: "Today's date"),
         Snippet(trigger: ";ty", replacement: "Thank you so much!$|", label: "Thank you"),
     ]
+}
+
+/// Orders for the snippet list.
+enum SnippetSort: String, CaseIterable, Identifiable {
+    case alphabetical, recentlyEdited, mostUsed, recentlyUsed
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .alphabetical: return "Trigger (A–Z)"
+        case .recentlyEdited: return "Recently edited"
+        case .mostUsed: return "Most used"
+        case .recentlyUsed: return "Recently used"
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .alphabetical: return "textformat"
+        case .recentlyEdited: return "pencil"
+        case .mostUsed: return "flame"
+        case .recentlyUsed: return "clock"
+        }
+    }
+}
+
+extension UsageData {
+    /// When the snippet was last expanded (ISO-8601, so strings sort by time).
+    func lastUsedAt(for s: Snippet) -> String? {
+        byKey[s.id]?.lastUsedAt ?? byKey["t:" + s.trigger]?.lastUsedAt
+    }
+}
+
+/// Light haptic feedback for successful actions.
+@MainActor
+enum Haptics {
+    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func warning() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
+    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
 }
